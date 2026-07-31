@@ -1,978 +1,649 @@
 #!/usr/bin/env python3
 """
-UnlockTap Backend API Test Suite
-Tests all backend endpoints for the UnlockTap application
+Focused Auth-Only Verification for UnlockTap
+Tests all authentication endpoints with comprehensive scenarios
 """
 
 import requests
 import json
-import sys
-from typing import Dict, Optional
+import base64
+import time
+from typing import Dict, Any, Optional
 
 # Base URL from environment
 BASE_URL = "https://device-verify-check.preview.emergentagent.com/api"
 
-# Test data
-TEST_USER = {
-    "name": "John Smith",
-    "email": f"testuser_{hash('test')}@example.com",
-    "password": "SecurePass123"
-}
+# Test results storage
+test_results = []
 
-ADMIN_CREDS = {
-    "email": "admin@unlocktap.com",
-    "password": "Admin@123"
-}
-
-TEST_IMEI = "359876543210987"
-TEST_SERIAL = "C39XY0ABJCLF"
-
-# Global state
-user_token = None
-admin_token = None
-search_id_imei = None
-search_id_serial = None
-
-def print_test(name: str):
-    """Print test name"""
-    print(f"\n{'='*60}")
-    print(f"TEST: {name}")
-    print('='*60)
-
-def print_success(msg: str):
-    """Print success message"""
-    print(f"✅ {msg}")
-
-def print_error(msg: str):
-    """Print error message"""
-    print(f"❌ {msg}")
-
-def make_request(method: str, endpoint: str, token: Optional[str] = None, 
-                 data: Optional[Dict] = None, expected_status: int = 200) -> tuple:
-    """Make HTTP request and return (success, response, data)"""
-    url = f"{BASE_URL}{endpoint}"
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    
-    try:
-        if method == "GET":
-            resp = requests.get(url, headers=headers, timeout=10)
-        elif method == "POST":
-            resp = requests.post(url, headers=headers, json=data, timeout=10)
-        elif method == "PUT":
-            resp = requests.put(url, headers=headers, json=data, timeout=10)
-        elif method == "DELETE":
-            resp = requests.delete(url, headers=headers, timeout=10)
-        else:
-            return False, None, {"error": f"Unknown method {method}"}
-        
-        try:
-            response_data = resp.json()
-        except:
-            response_data = {"text": resp.text}
-        
-        if resp.status_code != expected_status:
-            print_error(f"Expected status {expected_status}, got {resp.status_code}")
-            print(f"Response: {json.dumps(response_data, indent=2)}")
-            return False, resp, response_data
-        
-        return True, resp, response_data
-    except Exception as e:
-        print_error(f"Request failed: {str(e)}")
-        return False, None, {"error": str(e)}
-
-# ============================================================
-# AUTH TESTS
-# ============================================================
-
-def test_auth_register():
-    """Test user registration"""
-    global user_token
-    print_test("Auth - Register New User")
-    
-    # Valid registration
-    success, resp, data = make_request("POST", "/auth/register", data=TEST_USER)
-    if not success:
-        print_error("Registration failed")
-        return False
-    
-    if "token" not in data or "user" not in data:
-        print_error("Missing token or user in response")
-        return False
-    
-    if data["user"]["credits"] != 3:
-        print_error(f"Expected 3 credits, got {data['user']['credits']}")
-        return False
-    
-    user_token = data["token"]
-    print_success(f"User registered successfully with 3 credits")
-    print_success(f"Token: {user_token[:20]}...")
-    
-    # Test duplicate email (409)
-    success, resp, data = make_request("POST", "/auth/register", data=TEST_USER, expected_status=409)
-    if not success:
-        print_error("Duplicate email test failed")
-        return False
-    print_success("Duplicate email correctly rejected (409)")
-    
-    # Test invalid email (400)
-    invalid_user = TEST_USER.copy()
-    invalid_user["email"] = "invalid-email"
-    success, resp, data = make_request("POST", "/auth/register", data=invalid_user, expected_status=400)
-    if not success:
-        print_error("Invalid email test failed")
-        return False
-    print_success("Invalid email correctly rejected (400)")
-    
-    # Test short password (400)
-    short_pass_user = {
-        "name": "Test",
-        "email": "test2@example.com",
-        "password": "123"
+def log_test(test_name: str, passed: bool, details: str = "", response_data: Any = None):
+    """Log test result"""
+    status = "✅ PASS" if passed else "❌ FAIL"
+    result = {
+        "test": test_name,
+        "status": status,
+        "passed": passed,
+        "details": details,
+        "response": response_data
     }
-    success, resp, data = make_request("POST", "/auth/register", data=short_pass_user, expected_status=400)
-    if not success:
-        print_error("Short password test failed")
-        return False
-    print_success("Short password correctly rejected (400)")
-    
-    return True
+    test_results.append(result)
+    print(f"{status} | {test_name}")
+    if details:
+        print(f"    Details: {details}")
+    if not passed and response_data:
+        print(f"    Response: {json.dumps(response_data, indent=2)}")
+    print()
 
-def test_auth_login():
-    """Test user login"""
-    print_test("Auth - Login")
-    
-    # Valid login
-    success, resp, data = make_request("POST", "/auth/login", data={
-        "email": TEST_USER["email"],
-        "password": TEST_USER["password"]
-    })
-    if not success:
-        print_error("Login failed")
-        return False
-    
-    if "token" not in data or "user" not in data:
-        print_error("Missing token or user in response")
-        return False
-    
-    print_success("User logged in successfully")
-    
-    # Test wrong password (401)
-    success, resp, data = make_request("POST", "/auth/login", data={
-        "email": TEST_USER["email"],
-        "password": "WrongPassword123"
-    }, expected_status=401)
-    if not success:
-        print_error("Wrong password test failed")
-        return False
-    print_success("Wrong password correctly rejected (401)")
-    
-    return True
+def decode_token_payload(token: str) -> Optional[Dict]:
+    """Decode JWT-like token payload without verification"""
+    try:
+        parts = token.split('.')
+        if len(parts) != 2:
+            return None
+        
+        # Decode base64url
+        data = parts[0]
+        # Add padding if needed
+        data += '=' * (4 - len(data) % 4)
+        data = data.replace('-', '+').replace('_', '/')
+        
+        decoded = base64.b64decode(data)
+        payload = json.loads(decoded)
+        return payload
+    except Exception as e:
+        print(f"Token decode error: {e}")
+        return None
 
-def test_auth_me():
-    """Test get current user"""
-    print_test("Auth - Get Current User")
-    
-    # With valid token
-    success, resp, data = make_request("GET", "/auth/me", token=user_token)
-    if not success:
-        print_error("Get user failed")
-        return False
-    
-    if "user" not in data:
-        print_error("Missing user in response")
-        return False
-    
-    print_success(f"User retrieved: {data['user']['email']}")
-    
-    # Without token (401)
-    success, resp, data = make_request("GET", "/auth/me", expected_status=401)
-    if not success:
-        print_error("Unauthorized test failed")
-        return False
-    print_success("Unauthorized request correctly rejected (401)")
-    
-    return True
+def test_register_valid():
+    """Test 1.1: Valid registration"""
+    test_name = "POST /api/auth/register - Valid registration"
+    try:
+        payload = {
+            "name": "Test User",
+            "email": f"testuser_{int(time.time())}@example.com",
+            "password": "password123"
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+        data = response.json()
+        
+        if response.status_code == 200:
+            # Check token exists
+            if "token" not in data:
+                log_test(test_name, False, "Token not returned", data)
+                return None
+            
+            # Check user object
+            if "user" not in data:
+                log_test(test_name, False, "User object not returned", data)
+                return None
+            
+            user = data["user"]
+            
+            # Verify credits = 3
+            if user.get("credits") != 3:
+                log_test(test_name, False, f"Expected 3 credits, got {user.get('credits')}", data)
+                return None
+            
+            # Verify role = user
+            if user.get("role") != "user":
+                log_test(test_name, False, f"Expected role='user', got {user.get('role')}", data)
+                return None
+            
+            # Verify NO password field in response
+            if "password" in user:
+                log_test(test_name, False, "Password field present in response (security issue)", data)
+                return None
+            
+            log_test(test_name, True, f"User registered with 3 credits, role=user, no password in response")
+            return {"email": payload["email"], "password": payload["password"], "token": data["token"], "user": user}
+        else:
+            log_test(test_name, False, f"Expected 200, got {response.status_code}", data)
+            return None
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+        return None
 
-def test_auth_forgot_reset_password():
-    """Test forgot and reset password flow"""
-    print_test("Auth - Forgot & Reset Password")
-    
-    # Forgot password
-    success, resp, data = make_request("POST", "/auth/forgot-password", data={
-        "email": TEST_USER["email"]
-    })
-    if not success:
-        print_error("Forgot password failed")
-        return False
-    
-    if "demoResetCode" not in data:
-        print_error("Missing demoResetCode in response")
-        return False
-    
-    reset_code = data["demoResetCode"]
-    print_success(f"Reset code received: {reset_code}")
-    
-    # Reset password
-    new_password = "NewSecurePass456"
-    success, resp, data = make_request("POST", "/auth/reset-password", data={
-        "email": TEST_USER["email"],
-        "code": reset_code,
-        "password": new_password
-    })
-    if not success:
-        print_error("Reset password failed")
-        return False
-    
-    print_success("Password reset successful")
-    
-    # Login with new password
-    success, resp, data = make_request("POST", "/auth/login", data={
-        "email": TEST_USER["email"],
-        "password": new_password
-    })
-    if not success:
-        print_error("Login with new password failed")
-        return False
-    
-    print_success("Login with new password successful")
-    
-    # Update global token
-    global user_token
-    user_token = data["token"]
-    
-    return True
+def test_register_duplicate(email: str):
+    """Test 1.2: Duplicate email registration"""
+    test_name = "POST /api/auth/register - Duplicate email"
+    try:
+        payload = {
+            "name": "Duplicate User",
+            "email": email,
+            "password": "password123"
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+        data = response.json()
+        
+        if response.status_code == 409:
+            log_test(test_name, True, "Correctly returned 409 for duplicate email")
+        else:
+            log_test(test_name, False, f"Expected 409, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+
+def test_register_invalid_email():
+    """Test 1.3: Invalid email format"""
+    test_name = "POST /api/auth/register - Invalid email format"
+    try:
+        payload = {
+            "name": "Test User",
+            "email": "invalid-email-format",
+            "password": "password123"
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+        data = response.json()
+        
+        if response.status_code == 400:
+            log_test(test_name, True, "Correctly returned 400 for invalid email")
+        else:
+            log_test(test_name, False, f"Expected 400, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+
+def test_register_short_password():
+    """Test 1.4: Password < 6 characters"""
+    test_name = "POST /api/auth/register - Password < 6 chars"
+    try:
+        payload = {
+            "name": "Test User",
+            "email": f"testuser_{int(time.time())}@example.com",
+            "password": "12345"
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+        data = response.json()
+        
+        if response.status_code == 400:
+            log_test(test_name, True, "Correctly returned 400 for short password")
+        else:
+            log_test(test_name, False, f"Expected 400, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+
+def test_register_missing_fields():
+    """Test 1.5: Missing required fields"""
+    test_name = "POST /api/auth/register - Missing fields"
+    try:
+        payload = {
+            "name": "Test User",
+            "email": f"testuser_{int(time.time())}@example.com"
+            # Missing password
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+        data = response.json()
+        
+        if response.status_code == 400:
+            log_test(test_name, True, "Correctly returned 400 for missing fields")
+        else:
+            log_test(test_name, False, f"Expected 400, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+
+def test_login_valid(email: str, password: str):
+    """Test 2.1: Valid login"""
+    test_name = "POST /api/auth/login - Valid credentials"
+    try:
+        payload = {
+            "email": email,
+            "password": password
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/login", json=payload)
+        data = response.json()
+        
+        if response.status_code == 200:
+            if "token" in data and "user" in data:
+                log_test(test_name, True, "Login successful with token and user")
+                return data["token"]
+            else:
+                log_test(test_name, False, "Token or user missing in response", data)
+                return None
+        else:
+            log_test(test_name, False, f"Expected 200, got {response.status_code}", data)
+            return None
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+        return None
+
+def test_login_wrong_password(email: str):
+    """Test 2.2: Wrong password"""
+    test_name = "POST /api/auth/login - Wrong password"
+    try:
+        payload = {
+            "email": email,
+            "password": "wrongpassword123"
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/login", json=payload)
+        data = response.json()
+        
+        if response.status_code == 401:
+            log_test(test_name, True, "Correctly returned 401 for wrong password")
+        else:
+            log_test(test_name, False, f"Expected 401, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+
+def test_login_nonexistent_email():
+    """Test 2.3: Non-existent email"""
+    test_name = "POST /api/auth/login - Non-existent email"
+    try:
+        payload = {
+            "email": f"nonexistent_{int(time.time())}@example.com",
+            "password": "password123"
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/login", json=payload)
+        data = response.json()
+        
+        if response.status_code == 401:
+            log_test(test_name, True, "Correctly returned 401 for non-existent email")
+        else:
+            log_test(test_name, False, f"Expected 401, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+
+def test_login_missing_fields():
+    """Test 2.4: Missing fields"""
+    test_name = "POST /api/auth/login - Missing fields"
+    try:
+        payload = {
+            "email": "test@example.com"
+            # Missing password
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/login", json=payload)
+        data = response.json()
+        
+        if response.status_code == 400:
+            log_test(test_name, True, "Correctly returned 400 for missing fields")
+        else:
+            log_test(test_name, False, f"Expected 400, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
 
 def test_admin_login():
-    """Test admin login"""
-    global admin_token
-    print_test("Auth - Admin Login")
-    
-    success, resp, data = make_request("POST", "/auth/login", data=ADMIN_CREDS)
-    if not success:
-        print_error("Admin login failed")
-        return False
-    
-    if "token" not in data or "user" not in data:
-        print_error("Missing token or user in response")
-        return False
-    
-    if data["user"]["role"] != "admin":
-        print_error(f"Expected admin role, got {data['user']['role']}")
-        return False
-    
-    admin_token = data["token"]
-    print_success(f"Admin logged in successfully")
-    print_success(f"Admin token: {admin_token[:20]}...")
-    
-    return True
-
-# ============================================================
-# IMEI/SERIAL CHECK TESTS
-# ============================================================
-
-def test_imei_check():
-    """Test IMEI check endpoint"""
-    global search_id_imei
-    print_test("IMEI Check")
-    
-    # Valid IMEI
-    success, resp, data = make_request("POST", "/imei/check", token=user_token, data={
-        "imei": TEST_IMEI
-    })
-    if not success:
-        print_error("IMEI check failed")
-        return False
-    
-    if "searchId" not in data or "free" not in data or "locked" not in data:
-        print_error("Missing required fields in response")
-        return False
-    
-    if not data["locked"]:
-        print_error("Expected locked=true")
-        return False
-    
-    if "Brand" not in data["free"] or "Model" not in data["free"]:
-        print_error("Missing Brand or Model in free preview")
-        return False
-    
-    search_id_imei = data["searchId"]
-    model1 = data["free"]["Model"]
-    print_success(f"IMEI check successful, searchId: {search_id_imei}")
-    print_success(f"Free preview: {data['free']}")
-    
-    # Test same IMEI returns same model (deterministic)
-    success, resp, data2 = make_request("POST", "/imei/check", token=user_token, data={
-        "imei": TEST_IMEI
-    })
-    if not success:
-        print_error("Second IMEI check failed")
-        return False
-    
-    model2 = data2["free"]["Model"]
-    if model1 != model2:
-        print_error(f"IMEI check not deterministic: {model1} != {model2}")
-        return False
-    print_success("IMEI check is deterministic (same model returned)")
-    
-    # Test invalid IMEI (400)
-    success, resp, data = make_request("POST", "/imei/check", token=user_token, data={
-        "imei": "12345"
-    }, expected_status=400)
-    if not success:
-        print_error("Invalid IMEI test failed")
-        return False
-    print_success("Invalid IMEI correctly rejected (400)")
-    
-    return True
-
-def test_serial_check():
-    """Test Serial check endpoint"""
-    global search_id_serial
-    print_test("Serial Check")
-    
-    # Valid serial
-    success, resp, data = make_request("POST", "/serial/check", token=user_token, data={
-        "serial": TEST_SERIAL
-    })
-    if not success:
-        print_error("Serial check failed")
-        return False
-    
-    if "searchId" not in data or "free" not in data or "locked" not in data:
-        print_error("Missing required fields in response")
-        return False
-    
-    if not data["locked"]:
-        print_error("Expected locked=true")
-        return False
-    
-    if "Brand" not in data["free"] or "Model" not in data["free"]:
-        print_error("Missing Brand or Model in free preview")
-        return False
-    
-    search_id_serial = data["searchId"]
-    print_success(f"Serial check successful, searchId: {search_id_serial}")
-    print_success(f"Free preview: {data['free']}")
-    
-    # Test invalid serial (400)
-    success, resp, data = make_request("POST", "/serial/check", token=user_token, data={
-        "serial": "123"
-    }, expected_status=400)
-    if not success:
-        print_error("Invalid serial test failed")
-        return False
-    print_success("Invalid serial correctly rejected (400)")
-    
-    return True
-
-# ============================================================
-# UNLOCK / CREDITS TESTS
-# ============================================================
-
-def test_unlock_flow():
-    """Test unlock premium report with credit deduction"""
-    print_test("Unlock Premium Report - Credit Flow")
-    
-    # Get current credits
-    success, resp, data = make_request("GET", "/auth/me", token=user_token)
-    if not success:
-        print_error("Failed to get user")
-        return False
-    
-    initial_credits = data["user"]["credits"]
-    print_success(f"Initial credits: {initial_credits}")
-    
-    # Unlock IMEI report (should deduct 1 credit)
-    success, resp, data = make_request("POST", "/unlock", token=user_token, data={
-        "searchId": search_id_imei
-    })
-    if not success:
-        print_error("Unlock failed")
-        return False
-    
-    if "premium" not in data or "credits" not in data:
-        print_error("Missing premium or credits in response")
-        return False
-    
-    if data["credits"] != initial_credits - 1:
-        print_error(f"Expected {initial_credits - 1} credits, got {data['credits']}")
-        return False
-    
-    print_success(f"Unlock successful, credits deducted: {initial_credits} -> {data['credits']}")
-    print_success(f"Premium fields received: {list(data['premium'].keys())[:5]}...")
-    
-    # Unlock same searchId again (should NOT deduct another credit)
-    success, resp, data2 = make_request("POST", "/unlock", token=user_token, data={
-        "searchId": search_id_imei
-    })
-    if not success:
-        print_error("Second unlock failed")
-        return False
-    
-    if data2["credits"] != data["credits"]:
-        print_error(f"Credits changed on second unlock: {data['credits']} -> {data2['credits']}")
-        return False
-    
-    print_success("Second unlock did NOT deduct another credit (correct)")
-    
-    # Test unlock without auth (401)
-    success, resp, data = make_request("POST", "/unlock", data={
-        "searchId": search_id_imei
-    }, expected_status=401)
-    if not success:
-        print_error("Unauthorized unlock test failed")
-        return False
-    print_success("Unauthorized unlock correctly rejected (401)")
-    
-    return True
-
-def test_no_credits_unlock():
-    """Test unlock when user has no credits"""
-    print_test("Unlock - No Credits (402)")
-    
-    # Drain all credits by unlocking multiple times
-    # First, get current credits
-    success, resp, data = make_request("GET", "/auth/me", token=user_token)
-    if not success:
-        print_error("Failed to get user")
-        return False
-    
-    current_credits = data["user"]["credits"]
-    print_success(f"Current credits: {current_credits}")
-    
-    # Create new searches and unlock them to drain credits
-    for i in range(current_credits):
-        # Create a new search with different IMEI
-        test_imei = f"35987654321{str(i).zfill(4)}"
-        success, resp, search_data = make_request("POST", "/imei/check", token=user_token, data={
-            "imei": test_imei
-        })
-        if not success:
-            print_error(f"Failed to create search {i+1}")
-            return False
+    """Test 3: Admin login"""
+    test_name = "POST /api/auth/login - Admin credentials"
+    try:
+        payload = {
+            "email": "admin@unlocktap.com",
+            "password": "Admin@123"
+        }
         
-        # Unlock it
-        success, resp, unlock_data = make_request("POST", "/unlock", token=user_token, data={
-            "searchId": search_data["searchId"]
-        })
-        if not success:
-            print_error(f"Failed to unlock search {i+1}")
-            return False
+        response = requests.post(f"{BASE_URL}/auth/login", json=payload)
+        data = response.json()
         
-        print_success(f"Drained credit {i+1}/{current_credits}, remaining: {unlock_data['credits']}")
-    
-    # Now try to unlock with 0 credits (should get 402)
-    test_imei_final = "359876543219999"
-    success, resp, search_data = make_request("POST", "/imei/check", token=user_token, data={
-        "imei": test_imei_final
-    })
-    if not success:
-        print_error("Failed to create final search")
-        return False
-    
-    success, resp, data = make_request("POST", "/unlock", token=user_token, data={
-        "searchId": search_data["searchId"]
-    }, expected_status=402)
-    if not success:
-        print_error("No credits test failed")
-        return False
-    
-    if "code" not in data or data["code"] != "NO_CREDITS":
-        print_error(f"Expected code NO_CREDITS, got {data.get('code')}")
-        return False
-    
-    print_success("No credits correctly rejected with 402 and code NO_CREDITS")
-    
-    return True
+        if response.status_code == 200:
+            if "user" in data and data["user"].get("role") == "admin":
+                log_test(test_name, True, "Admin login successful with role='admin'")
+                return data["token"]
+            else:
+                log_test(test_name, False, f"Expected role='admin', got {data.get('user', {}).get('role')}", data)
+                return None
+        else:
+            log_test(test_name, False, f"Expected 200, got {response.status_code}", data)
+            return None
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+        return None
 
-# ============================================================
-# PLANS / CHECKOUT TESTS
-# ============================================================
+def test_auth_me_with_token(token: str):
+    """Test 4.1: GET /api/auth/me with valid token"""
+    test_name = "GET /api/auth/me - With valid Bearer token"
+    try:
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(f"{BASE_URL}/auth/me", headers=headers)
+        data = response.json()
+        
+        if response.status_code == 200:
+            if "user" in data:
+                log_test(test_name, True, "Successfully retrieved user with valid token")
+                return True
+            else:
+                log_test(test_name, False, "User object missing in response", data)
+                return False
+        else:
+            log_test(test_name, False, f"Expected 200, got {response.status_code}", data)
+            return False
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+        return False
 
-def test_plans():
-    """Test get plans endpoint"""
-    print_test("Plans - Get All Plans")
-    
-    success, resp, data = make_request("GET", "/plans")
-    if not success:
-        print_error("Get plans failed")
-        return False
-    
-    if "plans" not in data:
-        print_error("Missing plans in response")
-        return False
-    
-    if len(data["plans"]) != 4:
-        print_error(f"Expected 4 plans, got {len(data['plans'])}")
-        return False
-    
-    plan_ids = [p["id"] for p in data["plans"]]
-    expected_ids = ["single", "starter", "technician", "business"]
-    if not all(pid in plan_ids for pid in expected_ids):
-        print_error(f"Missing expected plan IDs. Got: {plan_ids}")
-        return False
-    
-    print_success(f"4 plans retrieved: {plan_ids}")
-    
-    return True
+def test_auth_me_without_token():
+    """Test 4.2: GET /api/auth/me without token"""
+    test_name = "GET /api/auth/me - Without token"
+    try:
+        response = requests.get(f"{BASE_URL}/auth/me")
+        data = response.json()
+        
+        if response.status_code == 401:
+            log_test(test_name, True, "Correctly returned 401 without token")
+        else:
+            log_test(test_name, False, f"Expected 401, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
 
-def test_checkout():
-    """Test mock checkout to add credits"""
-    print_test("Checkout - Mock Payment")
-    
-    # Get current credits
-    success, resp, data = make_request("GET", "/auth/me", token=user_token)
-    if not success:
-        print_error("Failed to get user")
-        return False
-    
-    initial_credits = data["user"]["credits"]
-    print_success(f"Initial credits: {initial_credits}")
-    
-    # Buy starter plan (10 credits)
-    success, resp, data = make_request("POST", "/checkout", token=user_token, data={
-        "planId": "starter"
-    })
-    if not success:
-        print_error("Checkout failed")
-        return False
-    
-    if "order" not in data or "credits" not in data:
-        print_error("Missing order or credits in response")
-        return False
-    
-    if data["credits"] != initial_credits + 10:
-        print_error(f"Expected {initial_credits + 10} credits, got {data['credits']}")
-        return False
-    
-    if data["order"]["status"] != "paid":
-        print_error(f"Expected order status 'paid', got {data['order']['status']}")
-        return False
-    
-    print_success(f"Checkout successful, credits added: {initial_credits} -> {data['credits']}")
-    print_success(f"Order created: {data['order']['id']}")
-    
-    return True
+def test_auth_me_malformed_token():
+    """Test 4.3: GET /api/auth/me with malformed token"""
+    test_name = "GET /api/auth/me - With malformed token"
+    try:
+        headers = {"Authorization": "Bearer invalid_token_format"}
+        response = requests.get(f"{BASE_URL}/auth/me", headers=headers)
+        data = response.json()
+        
+        if response.status_code == 401:
+            log_test(test_name, True, "Correctly returned 401 for malformed token")
+        else:
+            log_test(test_name, False, f"Expected 401, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
 
-# ============================================================
-# USER DATA TESTS
-# ============================================================
+def test_auth_me_tampered_token(token: str):
+    """Test 4.4: GET /api/auth/me with tampered token"""
+    test_name = "GET /api/auth/me - With tampered token (HMAC verification)"
+    try:
+        # Tamper with the token by changing a character in the data part
+        if len(token) > 10:
+            tampered = token[0] + ('X' if token[1] != 'X' else 'Y') + token[2:]
+        else:
+            tampered = "tampered.token"
+        
+        headers = {"Authorization": f"Bearer {tampered}"}
+        response = requests.get(f"{BASE_URL}/auth/me", headers=headers)
+        data = response.json()
+        
+        if response.status_code == 401:
+            log_test(test_name, True, "Correctly returned 401 for tampered token (HMAC signature verification working)")
+        else:
+            log_test(test_name, False, f"Expected 401, got {response.status_code} - SECURITY ISSUE: tampered token accepted!", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
 
-def test_dashboard():
-    """Test dashboard endpoint"""
-    print_test("Dashboard - User Stats")
-    
-    success, resp, data = make_request("GET", "/dashboard", token=user_token)
-    if not success:
-        print_error("Dashboard failed")
-        return False
-    
-    if "stats" not in data or "recent" not in data:
-        print_error("Missing stats or recent in response")
-        return False
-    
-    required_stats = ["credits", "searches", "reports", "orders"]
-    if not all(key in data["stats"] for key in required_stats):
-        print_error(f"Missing required stats. Got: {list(data['stats'].keys())}")
-        return False
-    
-    print_success(f"Dashboard retrieved: {data['stats']}")
-    
-    # Test without auth (401)
-    success, resp, data = make_request("GET", "/dashboard", expected_status=401)
-    if not success:
-        print_error("Unauthorized dashboard test failed")
-        return False
-    print_success("Unauthorized dashboard correctly rejected (401)")
-    
-    return True
+def test_forgot_password_existing_email(email: str):
+    """Test 5.1: Forgot password with existing email"""
+    test_name = "POST /api/auth/forgot-password - Existing email"
+    try:
+        payload = {"email": email}
+        response = requests.post(f"{BASE_URL}/auth/forgot-password", json=payload)
+        data = response.json()
+        
+        if response.status_code == 200:
+            if "demoResetCode" in data and data["demoResetCode"]:
+                log_test(test_name, True, f"Reset code returned: {data['demoResetCode']}")
+                return data["demoResetCode"]
+            else:
+                log_test(test_name, False, "demoResetCode not present or null", data)
+                return None
+        else:
+            log_test(test_name, False, f"Expected 200, got {response.status_code}", data)
+            return None
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
+        return None
 
-def test_history():
-    """Test search history endpoint"""
-    print_test("History - Search History")
-    
-    success, resp, data = make_request("GET", "/history", token=user_token)
-    if not success:
-        print_error("History failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"History retrieved: {len(data['items'])} items")
-    
-    # Test without auth (401)
-    success, resp, data = make_request("GET", "/history", expected_status=401)
-    if not success:
-        print_error("Unauthorized history test failed")
-        return False
-    print_success("Unauthorized history correctly rejected (401)")
-    
-    return True
+def test_forgot_password_nonexistent_email():
+    """Test 5.2: Forgot password with non-existent email"""
+    test_name = "POST /api/auth/forgot-password - Non-existent email"
+    try:
+        payload = {"email": f"nonexistent_{int(time.time())}@example.com"}
+        response = requests.post(f"{BASE_URL}/auth/forgot-password", json=payload)
+        data = response.json()
+        
+        if response.status_code == 200:
+            # Should return 200 with generic message, no code or null code
+            if data.get("demoResetCode") is None:
+                log_test(test_name, True, "Correctly returned 200 with null code for non-existent email")
+            else:
+                log_test(test_name, False, f"Expected null code, got: {data.get('demoResetCode')}", data)
+        else:
+            log_test(test_name, False, f"Expected 200, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
 
-def test_reports():
-    """Test reports endpoint"""
-    print_test("Reports - Premium Reports")
+def test_reset_password_flow():
+    """Test 6: Complete reset password flow"""
+    test_name_base = "POST /api/auth/reset-password - Full flow"
     
-    success, resp, data = make_request("GET", "/reports", token=user_token)
-    if not success:
-        print_error("Reports failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Reports retrieved: {len(data['items'])} items")
-    
-    # Test without auth (401)
-    success, resp, data = make_request("GET", "/reports", expected_status=401)
-    if not success:
-        print_error("Unauthorized reports test failed")
-        return False
-    print_success("Unauthorized reports correctly rejected (401)")
-    
-    return True
+    # Step 1: Register a new user
+    try:
+        email = f"resettest_{int(time.time())}@example.com"
+        old_password = "oldpassword123"
+        new_password = "newpassword456"
+        
+        # Register
+        reg_payload = {
+            "name": "Reset Test User",
+            "email": email,
+            "password": old_password
+        }
+        reg_response = requests.post(f"{BASE_URL}/auth/register", json=reg_payload)
+        if reg_response.status_code != 200:
+            log_test(f"{test_name_base} - Registration", False, f"Failed to register user: {reg_response.status_code}")
+            return
+        
+        # Step 2: Request forgot password
+        forgot_payload = {"email": email}
+        forgot_response = requests.post(f"{BASE_URL}/auth/forgot-password", json=forgot_payload)
+        forgot_data = forgot_response.json()
+        
+        if forgot_response.status_code != 200 or not forgot_data.get("demoResetCode"):
+            log_test(f"{test_name_base} - Forgot password", False, "Failed to get reset code", forgot_data)
+            return
+        
+        reset_code = forgot_data["demoResetCode"]
+        
+        # Step 3: Reset password
+        reset_payload = {
+            "email": email,
+            "code": reset_code,
+            "password": new_password
+        }
+        reset_response = requests.post(f"{BASE_URL}/auth/reset-password", json=reset_payload)
+        
+        if reset_response.status_code != 200:
+            log_test(f"{test_name_base} - Reset password", False, f"Expected 200, got {reset_response.status_code}", reset_response.json())
+            return
+        
+        log_test(f"{test_name_base} - Reset password", True, "Password reset successful")
+        
+        # Step 4: Login with NEW password
+        login_new_payload = {"email": email, "password": new_password}
+        login_new_response = requests.post(f"{BASE_URL}/auth/login", json=login_new_payload)
+        
+        if login_new_response.status_code != 200:
+            log_test(f"{test_name_base} - Login with NEW password", False, f"Expected 200, got {login_new_response.status_code}", login_new_response.json())
+            return
+        
+        log_test(f"{test_name_base} - Login with NEW password", True, "Login successful with new password")
+        
+        # Step 5: Login with OLD password (should fail)
+        login_old_payload = {"email": email, "password": old_password}
+        login_old_response = requests.post(f"{BASE_URL}/auth/login", json=login_old_payload)
+        
+        if login_old_response.status_code == 401:
+            log_test(f"{test_name_base} - Login with OLD password", True, "Correctly rejected old password (401)")
+        else:
+            log_test(f"{test_name_base} - Login with OLD password", False, f"Expected 401, got {login_old_response.status_code} - SECURITY ISSUE: old password still works!", login_old_response.json())
+        
+    except Exception as e:
+        log_test(f"{test_name_base} - Exception", False, f"Exception: {str(e)}")
 
-def test_orders():
-    """Test orders endpoint"""
-    print_test("Orders - Purchase History")
-    
-    success, resp, data = make_request("GET", "/orders", token=user_token)
-    if not success:
-        print_error("Orders failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Orders retrieved: {len(data['items'])} items")
-    
-    # Test without auth (401)
-    success, resp, data = make_request("GET", "/orders", expected_status=401)
-    if not success:
-        print_error("Unauthorized orders test failed")
-        return False
-    print_success("Unauthorized orders correctly rejected (401)")
-    
-    return True
+def test_reset_password_wrong_code(email: str):
+    """Test 6.2: Reset password with wrong code"""
+    test_name = "POST /api/auth/reset-password - Wrong/invalid reset code"
+    try:
+        payload = {
+            "email": email,
+            "code": "WRONGCODE",
+            "password": "newpassword123"
+        }
+        
+        response = requests.post(f"{BASE_URL}/auth/reset-password", json=payload)
+        data = response.json()
+        
+        if response.status_code == 400:
+            log_test(test_name, True, "Correctly returned 400 for invalid reset code")
+        else:
+            log_test(test_name, False, f"Expected 400, got {response.status_code}", data)
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
 
-# ============================================================
-# ADMIN TESTS
-# ============================================================
+def test_token_structure_and_persistence(token: str):
+    """Test 7: Token structure and session persistence"""
+    test_name = "Token structure verification (sub, role, exp)"
+    
+    try:
+        payload = decode_token_payload(token)
+        
+        if not payload:
+            log_test(test_name, False, "Failed to decode token payload")
+            return
+        
+        # Check for required fields
+        required_fields = ["sub", "role", "exp"]
+        missing_fields = [f for f in required_fields if f not in payload]
+        
+        if missing_fields:
+            log_test(test_name, False, f"Missing required fields: {missing_fields}", payload)
+            return
+        
+        log_test(test_name, True, f"Token contains sub={payload['sub']}, role={payload['role']}, exp={payload['exp']}")
+        
+        # Test session persistence - multiple calls with same token
+        test_name_persistence = "Session persistence - Multiple /auth/me calls"
+        try:
+            headers = {"Authorization": f"Bearer {token}"}
+            
+            # Make 3 consecutive calls
+            responses = []
+            for i in range(3):
+                response = requests.get(f"{BASE_URL}/auth/me", headers=headers)
+                responses.append(response.status_code)
+                time.sleep(0.1)
+            
+            if all(status == 200 for status in responses):
+                log_test(test_name_persistence, True, "Token works consistently across multiple calls")
+            else:
+                log_test(test_name_persistence, False, f"Inconsistent responses: {responses}")
+        except Exception as e:
+            log_test(test_name_persistence, False, f"Exception: {str(e)}")
+            
+    except Exception as e:
+        log_test(test_name, False, f"Exception: {str(e)}")
 
-def test_admin_stats():
-    """Test admin stats endpoint"""
-    print_test("Admin - Stats")
+def print_summary():
+    """Print test summary table"""
+    print("\n" + "="*80)
+    print("AUTH TESTING SUMMARY")
+    print("="*80)
     
-    success, resp, data = make_request("GET", "/admin/stats", token=admin_token)
-    if not success:
-        print_error("Admin stats failed")
-        return False
+    passed = sum(1 for r in test_results if r["passed"])
+    failed = sum(1 for r in test_results if not r["passed"])
+    total = len(test_results)
     
-    if "stats" not in data:
-        print_error("Missing stats in response")
-        return False
+    print(f"\nTotal Tests: {total}")
+    print(f"Passed: {passed} ✅")
+    print(f"Failed: {failed} ❌")
+    print(f"Success Rate: {(passed/total*100):.1f}%\n")
     
-    required_stats = ["users", "searches", "reports", "orders", "contacts", "revenue"]
-    if not all(key in data["stats"] for key in required_stats):
-        print_error(f"Missing required stats. Got: {list(data['stats'].keys())}")
-        return False
+    print("-"*80)
+    print(f"{'TEST NAME':<60} {'STATUS':<10}")
+    print("-"*80)
     
-    print_success(f"Admin stats retrieved: {data['stats']}")
+    for result in test_results:
+        status = "✅ PASS" if result["passed"] else "❌ FAIL"
+        print(f"{result['test']:<60} {status:<10}")
     
-    # Test with non-admin user (403)
-    success, resp, data = make_request("GET", "/admin/stats", token=user_token, expected_status=403)
-    if not success:
-        print_error("Non-admin access test failed")
-        return False
-    print_success("Non-admin user correctly rejected (403)")
+    print("-"*80)
     
-    return True
-
-def test_admin_users():
-    """Test admin users endpoint"""
-    print_test("Admin - Users List")
+    # Print failed tests details
+    failed_tests = [r for r in test_results if not r["passed"]]
+    if failed_tests:
+        print("\n" + "="*80)
+        print("FAILED TESTS DETAILS")
+        print("="*80)
+        for result in failed_tests:
+            print(f"\n❌ {result['test']}")
+            print(f"   Details: {result['details']}")
+            if result['response']:
+                print(f"   Response: {json.dumps(result['response'], indent=2)}")
     
-    success, resp, data = make_request("GET", "/admin/users", token=admin_token)
-    if not success:
-        print_error("Admin users failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Admin users retrieved: {len(data['items'])} users")
-    
-    return True
-
-def test_admin_update_user():
-    """Test admin update user credits"""
-    print_test("Admin - Update User Credits")
-    
-    # Get a user ID (use the test user)
-    success, resp, data = make_request("GET", "/auth/me", token=user_token)
-    if not success:
-        print_error("Failed to get user")
-        return False
-    
-    user_id = data["user"]["id"]
-    
-    # Update credits to 100
-    success, resp, data = make_request("PUT", f"/admin/users/{user_id}", token=admin_token, data={
-        "credits": 100
-    })
-    if not success:
-        print_error("Admin update user failed")
-        return False
-    
-    if "user" not in data or data["user"]["credits"] != 100:
-        print_error(f"Expected 100 credits, got {data.get('user', {}).get('credits')}")
-        return False
-    
-    print_success(f"User credits updated to 100")
-    
-    return True
-
-def test_admin_searches():
-    """Test admin searches endpoint"""
-    print_test("Admin - All Searches")
-    
-    success, resp, data = make_request("GET", "/admin/searches", token=admin_token)
-    if not success:
-        print_error("Admin searches failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Admin searches retrieved: {len(data['items'])} searches")
-    
-    return True
-
-def test_admin_reports():
-    """Test admin reports endpoint"""
-    print_test("Admin - All Reports")
-    
-    success, resp, data = make_request("GET", "/admin/reports", token=admin_token)
-    if not success:
-        print_error("Admin reports failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Admin reports retrieved: {len(data['items'])} reports")
-    
-    return True
-
-def test_admin_orders():
-    """Test admin orders endpoint"""
-    print_test("Admin - All Orders")
-    
-    success, resp, data = make_request("GET", "/admin/orders", token=admin_token)
-    if not success:
-        print_error("Admin orders failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Admin orders retrieved: {len(data['items'])} orders")
-    
-    return True
-
-def test_admin_contacts():
-    """Test admin contacts endpoint"""
-    print_test("Admin - All Contacts")
-    
-    success, resp, data = make_request("GET", "/admin/contacts", token=admin_token)
-    if not success:
-        print_error("Admin contacts failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Admin contacts retrieved: {len(data['items'])} contacts")
-    
-    return True
-
-def test_admin_plans():
-    """Test admin plans endpoint"""
-    print_test("Admin - All Plans")
-    
-    success, resp, data = make_request("GET", "/admin/plans", token=admin_token)
-    if not success:
-        print_error("Admin plans failed")
-        return False
-    
-    if "items" not in data:
-        print_error("Missing items in response")
-        return False
-    
-    print_success(f"Admin plans retrieved: {len(data['items'])} plans")
-    
-    return True
-
-def test_admin_update_plan():
-    """Test admin update plan"""
-    print_test("Admin - Update Plan Price")
-    
-    # Update starter plan price to 9.99
-    success, resp, data = make_request("PUT", "/admin/plans/starter", token=admin_token, data={
-        "price": 9.99
-    })
-    if not success:
-        print_error("Admin update plan failed")
-        return False
-    
-    if "plan" not in data or data["plan"]["price"] != 9.99:
-        print_error(f"Expected price 9.99, got {data.get('plan', {}).get('price')}")
-        return False
-    
-    print_success(f"Plan price updated to 9.99")
-    
-    # Restore original price
-    success, resp, data = make_request("PUT", "/admin/plans/starter", token=admin_token, data={
-        "price": 14.99
-    })
-    if not success:
-        print_error("Failed to restore plan price")
-        return False
-    
-    print_success("Plan price restored to 14.99")
-    
-    return True
-
-# ============================================================
-# CONTACT TESTS
-# ============================================================
-
-def test_contact():
-    """Test contact form endpoint"""
-    print_test("Contact - Submit Form")
-    
-    success, resp, data = make_request("POST", "/contact", data={
-        "name": "Test User",
-        "email": "test@example.com",
-        "message": "This is a test message"
-    })
-    if not success:
-        print_error("Contact form failed")
-        return False
-    
-    if "message" not in data:
-        print_error("Missing message in response")
-        return False
-    
-    print_success("Contact form submitted successfully")
-    
-    # Test missing fields (400)
-    success, resp, data = make_request("POST", "/contact", data={
-        "name": "Test User"
-    }, expected_status=400)
-    if not success:
-        print_error("Missing fields test failed")
-        return False
-    print_success("Missing fields correctly rejected (400)")
-    
-    return True
-
-# ============================================================
-# MAIN TEST RUNNER
-# ============================================================
+    print("\n" + "="*80)
 
 def main():
-    """Run all tests"""
-    print("\n" + "="*60)
-    print("UnlockTap Backend API Test Suite")
-    print("="*60)
+    """Run all auth tests"""
+    print("="*80)
+    print("UNLOCKTAP AUTH-ONLY VERIFICATION")
+    print("="*80)
     print(f"Base URL: {BASE_URL}")
-    print("="*60)
+    print("="*80)
+    print()
     
-    tests = [
-        # Auth tests
-        ("Auth - Register", test_auth_register),
-        ("Auth - Login", test_auth_login),
-        ("Auth - Me", test_auth_me),
-        ("Auth - Forgot/Reset Password", test_auth_forgot_reset_password),
-        ("Auth - Admin Login", test_admin_login),
-        
-        # IMEI/Serial tests
-        ("IMEI Check", test_imei_check),
-        ("Serial Check", test_serial_check),
-        
-        # Unlock tests
-        ("Unlock - Credit Flow", test_unlock_flow),
-        ("Unlock - No Credits", test_no_credits_unlock),
-        
-        # Plans/Checkout tests
-        ("Plans", test_plans),
-        ("Checkout", test_checkout),
-        
-        # User data tests
-        ("Dashboard", test_dashboard),
-        ("History", test_history),
-        ("Reports", test_reports),
-        ("Orders", test_orders),
-        
-        # Admin tests
-        ("Admin - Stats", test_admin_stats),
-        ("Admin - Users", test_admin_users),
-        ("Admin - Update User", test_admin_update_user),
-        ("Admin - Searches", test_admin_searches),
-        ("Admin - Reports", test_admin_reports),
-        ("Admin - Orders", test_admin_orders),
-        ("Admin - Contacts", test_admin_contacts),
-        ("Admin - Plans", test_admin_plans),
-        ("Admin - Update Plan", test_admin_update_plan),
-        
-        # Contact test
-        ("Contact", test_contact),
-    ]
+    # Test 1: Registration
+    print("--- TEST GROUP 1: REGISTRATION ---")
+    user_data = test_register_valid()
+    if user_data:
+        test_register_duplicate(user_data["email"])
+    test_register_invalid_email()
+    test_register_short_password()
+    test_register_missing_fields()
+    print()
     
-    passed = 0
-    failed = 0
-    failed_tests = []
+    # Test 2: Login
+    print("--- TEST GROUP 2: LOGIN ---")
+    if user_data:
+        user_token = test_login_valid(user_data["email"], user_data["password"])
+        test_login_wrong_password(user_data["email"])
+    test_login_nonexistent_email()
+    test_login_missing_fields()
+    print()
     
-    for name, test_func in tests:
-        try:
-            if test_func():
-                passed += 1
-            else:
-                failed += 1
-                failed_tests.append(name)
-        except Exception as e:
-            print_error(f"Test '{name}' crashed: {str(e)}")
-            failed += 1
-            failed_tests.append(name)
+    # Test 3: Admin login
+    print("--- TEST GROUP 3: ADMIN LOGIN ---")
+    admin_token = test_admin_login()
+    print()
+    
+    # Test 4: /auth/me endpoint
+    print("--- TEST GROUP 4: GET /auth/me ---")
+    if user_token:
+        test_auth_me_with_token(user_token)
+        test_auth_me_tampered_token(user_token)
+    test_auth_me_without_token()
+    test_auth_me_malformed_token()
+    print()
+    
+    # Test 5: Forgot password
+    print("--- TEST GROUP 5: FORGOT PASSWORD ---")
+    if user_data:
+        reset_code = test_forgot_password_existing_email(user_data["email"])
+    test_forgot_password_nonexistent_email()
+    print()
+    
+    # Test 6: Reset password
+    print("--- TEST GROUP 6: RESET PASSWORD ---")
+    test_reset_password_flow()
+    if user_data:
+        test_reset_password_wrong_code(user_data["email"])
+    print()
+    
+    # Test 7: Token structure and persistence
+    print("--- TEST GROUP 7: TOKEN STRUCTURE & SESSION PERSISTENCE ---")
+    if user_token:
+        test_token_structure_and_persistence(user_token)
+    print()
     
     # Print summary
-    print("\n" + "="*60)
-    print("TEST SUMMARY")
-    print("="*60)
-    print(f"Total tests: {passed + failed}")
-    print(f"✅ Passed: {passed}")
-    print(f"❌ Failed: {failed}")
+    print_summary()
     
-    if failed_tests:
-        print("\nFailed tests:")
-        for test_name in failed_tests:
-            print(f"  - {test_name}")
-    
-    print("="*60)
-    
+    # Return exit code
+    failed = sum(1 for r in test_results if not r["passed"])
     return 0 if failed == 0 else 1
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit(main())

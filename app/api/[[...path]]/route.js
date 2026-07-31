@@ -281,17 +281,32 @@ async function handleRoute(request, { params }) {
     // ---------------- AUTH ----------------
     if (route === '/auth/register' && method === 'POST') {
       const body = await request.json()
-      const { name, email, password } = body
-      if (!name || !email || !password) return json({ error: 'All fields are required' }, 400)
+      const { name, username, country, phone, email, password } = body
+      // Required field validation
+      if (!name || !username || !country || !phone || !email || !password) {
+        return json({ error: 'All fields are required' }, 400)
+      }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'Invalid email address' }, 400)
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+        return json({ error: 'Username must be 3-20 characters (letters, numbers, underscore only)' }, 400)
+      }
+      if (!/^[+\d][\d\s()\-]{6,19}$/.test(phone)) return json({ error: 'Invalid phone number' }, 400)
       if (password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400)
-      const existing = await db.collection('users').findOne({ email: email.toLowerCase() })
-      if (existing) return json({ error: 'An account with this email already exists' }, 409)
+      // Duplicate email check
+      const emailExists = await db.collection('users').findOne({ email: email.toLowerCase() })
+      if (emailExists) return json({ error: 'An account with this email already exists' }, 409)
+      // Duplicate username check (case-insensitive)
+      const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const usernameExists = await db.collection('users').findOne({ username: { $regex: `^${escaped}$`, $options: 'i' } })
+      if (usernameExists) return json({ error: 'This username is already taken' }, 409)
       const user = {
         id: uuidv4(),
         name,
+        username,
+        country,
+        phone,
         email: email.toLowerCase(),
-        password: hashPassword(password),
+        password: hashPassword(password), // never stored/returned in plaintext
         role: 'user',
         credits: 3, // free welcome credits
         language: body.language || 'en',

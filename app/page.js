@@ -26,6 +26,16 @@ import { toast } from 'sonner'
 const HERO_IMG = 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=1200&q=80'
 const CTA_IMG = 'https://images.unsplash.com/photo-1621768216002-5ac171876625?auto=format&fit=crop&w=1200&q=80'
 
+const COUNTRIES_LIST = [
+  'United States', 'United Kingdom', 'Canada', 'France', 'Germany', 'Spain', 'Italy',
+  'Netherlands', 'Belgium', 'Switzerland', 'Portugal', 'Ireland', 'Sweden', 'Norway',
+  'Denmark', 'Finland', 'Poland', 'Austria', 'Greece', 'Haiti', 'Dominican Republic',
+  'Mexico', 'Brazil', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Jamaica', 'Trinidad and Tobago',
+  'Australia', 'New Zealand', 'Japan', 'China', 'South Korea', 'India', 'Singapore',
+  'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'South Africa', 'Nigeria', 'Kenya',
+  'Egypt', 'Morocco', 'Turkey', 'Israel', 'Other',
+]
+
 // ------------------------------------------------------------------
 // i18n
 // ------------------------------------------------------------------
@@ -659,11 +669,11 @@ function Checker({ kind, navigate, token, user, setUser, t }) {
 // ==================================================================
 // Auth Pages
 // ==================================================================
-function AuthShell({ title, sub, children, footer }) {
+function AuthShell({ title, sub, children, footer, wide, onHome }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-600 via-blue-500 to-blue-400 p-4">
-      <div className="w-full max-w-md">
-        <button onClick={() => (window.location.hash = '')} className="mb-6 flex items-center justify-center gap-2 text-white">
+      <div className={`w-full ${wide ? 'max-w-lg' : 'max-w-md'}`}>
+        <button onClick={onHome} className="mb-6 flex items-center justify-center gap-2 text-white">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 backdrop-blur"><ScanLine className="h-5 w-5" /></div>
           <span className="text-xl font-bold">Unlock<span className="text-blue-100">Tap</span></span>
         </button>
@@ -682,26 +692,34 @@ function AuthShell({ title, sub, children, footer }) {
 
 function AuthPage({ mode, navigate, setAuth, t }) {
   const isLogin = mode === 'login'
-  const [form, setForm] = useState({ name: '', email: '', password: '' })
+  const [form, setForm] = useState({ name: '', username: '', country: '', phone: '', email: '', password: '', confirmPassword: '' })
   const [loading, setLoading] = useState(false)
   const upd = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
   const submit = async (e) => {
     e.preventDefault()
+    if (!isLogin) {
+      if (!form.country) { toast.error('Please select your country'); return }
+      if (form.password !== form.confirmPassword) { toast.error('Passwords do not match'); return }
+    }
     setLoading(true)
     try {
-      const res = await api(isLogin ? '/auth/login' : '/auth/register', {
-        method: 'POST',
-        body: isLogin ? { email: form.email, password: form.password } : form,
-      })
+      const payload = isLogin
+        ? { email: form.email, password: form.password }
+        : { name: form.name, username: form.username, country: form.country, phone: form.phone, email: form.email, password: form.password }
+      const res = await api(isLogin ? '/auth/login' : '/auth/register', { method: 'POST', body: payload })
       setAuth(res.token, res.user)
       toast.success(isLogin ? 'Welcome back!' : 'Account created! You got 3 free credits.')
       navigate(res.user.role === 'admin' ? 'admin' : 'dashboard')
     } catch (err) { toast.error(err.message) } finally { setLoading(false) }
   }
 
+  const inputCls = 'mt-1 h-11 rounded-xl'
+
   return (
     <AuthShell
+      wide={!isLogin}
+      onHome={() => navigate('home')}
       title={isLogin ? t('welcome_back') : t('create_account')}
       sub={isLogin ? t('signin_sub') : t('register_sub')}
       footer={
@@ -710,22 +728,44 @@ function AuthPage({ mode, navigate, setAuth, t }) {
         </button>
       }
     >
-      <form onSubmit={submit} className="space-y-4">
-        {!isLogin && (
-          <div><Label>{t('name')}</Label><Input className="mt-1 h-11 rounded-xl" value={form.name} onChange={upd('name')} required /></div>
-        )}
-        <div><Label>{t('email')}</Label><Input type="email" className="mt-1 h-11 rounded-xl" value={form.email} onChange={upd('email')} required /></div>
-        <div><Label>{t('password')}</Label><Input type="password" className="mt-1 h-11 rounded-xl" value={form.password} onChange={upd('password')} required /></div>
-        {isLogin && (
+      {isLogin ? (
+        <form onSubmit={submit} className="space-y-4">
+          <div><Label>Email Address</Label><Input type="email" className={inputCls} value={form.email} onChange={upd('email')} required /></div>
+          <div><Label>Password</Label><Input type="password" className={inputCls} value={form.password} onChange={upd('password')} required /></div>
           <div className="text-right"><button type="button" onClick={() => navigate('forgot')} className="text-sm text-blue-600 hover:underline">{t('forgot')}</button></div>
-        )}
-        <Button type="submit" className="h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : (isLogin ? t('login') : t('register'))}
-        </Button>
-        {isLogin && (
+          <Button type="submit" className="h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('login')}
+          </Button>
           <p className="rounded-lg bg-slate-50 p-2 text-center text-xs text-slate-500">Admin demo: admin@unlocktap.com / Admin@123</p>
-        )}
-      </form>
+        </form>
+      ) : (
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><Label>Full Name</Label><Input className={inputCls} value={form.name} onChange={upd('name')} placeholder="John Smith" required /></div>
+            <div><Label>Username</Label><Input className={inputCls} value={form.username} onChange={upd('username')} placeholder="johnsmith" required /></div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Country</Label>
+              <Select value={form.country} onValueChange={(v) => setForm({ ...form, country: v })}>
+                <SelectTrigger className={inputCls}><SelectValue placeholder="Select country" /></SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {COUNTRIES_LIST.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>Phone Number</Label><Input type="tel" className={inputCls} value={form.phone} onChange={upd('phone')} placeholder="+1 555 123 4567" required /></div>
+          </div>
+          <div><Label>Email Address</Label><Input type="email" className={inputCls} value={form.email} onChange={upd('email')} placeholder="john@example.com" required /></div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><Label>Password</Label><Input type="password" className={inputCls} value={form.password} onChange={upd('password')} required /></div>
+            <div><Label>Confirm Password</Label><Input type="password" className={inputCls} value={form.confirmPassword} onChange={upd('confirmPassword')} required /></div>
+          </div>
+          <Button type="submit" className="h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('register')}
+          </Button>
+        </form>
+      )}
     </AuthShell>
   )
 }
@@ -922,6 +962,12 @@ function Profile(props) {
             <div className="flex items-center gap-4">
               <Avatar className="h-16 w-16"><AvatarFallback className="bg-blue-600 text-lg text-white">{user?.name?.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
               <div><p className="font-semibold">{user?.name}</p><p className="text-sm text-slate-500">{user?.email}</p><Badge className="mt-1 bg-blue-50 text-blue-700 hover:bg-blue-50" variant="secondary">{user?.credits} {t('credits')}</Badge></div>
+            </div>
+            <Separator />
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div><Label className="text-xs text-slate-500">Username</Label><p className="mt-1 text-sm font-medium">{user?.username || '—'}</p></div>
+              <div><Label className="text-xs text-slate-500">Country</Label><p className="mt-1 text-sm font-medium">{user?.country || '—'}</p></div>
+              <div><Label className="text-xs text-slate-500">Phone</Label><p className="mt-1 text-sm font-medium">{user?.phone || '—'}</p></div>
             </div>
             <Separator />
             <div><Label>{t('name')}</Label><Input className="mt-1 h-11 rounded-xl" value={name} onChange={e => setName(e.target.value)} /></div>

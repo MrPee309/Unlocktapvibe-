@@ -125,6 +125,9 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ UPDATED CUSTOMER REGISTRATION FLOW VERIFIED (38/38 tests passed - 100% success): Registration expanded to professional form requiring ALL 6 fields (name, username, country, phone, email, password). All validation rules working correctly: (1) Valid registration with all 6 fields returns token+user containing name/username/country/phone/email, credits=3, role=user, NO password field in response. (2) Missing ANY of the 6 fields correctly returns 400. (3) Username validation working: too short (<3 chars) returns 400, contains space returns 400, too long (>20 chars) returns 400. (4) Invalid phone format returns 400. (5) Password < 6 chars returns 400. (6) Invalid email format returns 400. (7) Duplicate email returns 409. (8) NEW: Duplicate username (case-insensitive) returns 409 - tested with 'johnsmith1785541421' then 'JOHNSMITH1785541421'. Complete customer flow verified: register user A → login (email+password) → GET /auth/me returns all profile fields with no password → protected endpoints (/dashboard, /history, /reports, /orders) accessible with Bearer token (all 200), return 401 without token. Data isolation fully verified: User A performed IMEI check + unlock (credits 3→2) + checkout (credits 2→12). User B registered and logged in. User B's /history, /reports, /orders are EMPTY (correct isolation, no User A data visible). User A's /history, /reports, /orders contain only User A's data. Admin login still works: admin@unlocktap.com/Admin@123 returns role='admin'. All security measures intact. NO CODE MODIFICATIONS MADE."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ MONGODB CONNECTION FIX REGRESSION TEST PASSED: Auth endpoints fully verified after MongoDB connection robustness bugfix. POST /api/auth/register with all 6 fields (name, username, country, phone, email, password) returns 200 with token+user (3 credits, role=user, no password field). Duplicate email returns 409. Duplicate username (case-insensitive) returns 409. Missing fields return 400. POST /api/auth/login with valid credentials returns 200 with token+user. Wrong password returns 401. GET /api/auth/me with Bearer token returns 200 with user data. Without token returns 401. Admin login (admin@unlocktap.com/Admin@123) returns 200 with role='admin'. All auth flows working correctly after DB connection fix."
   - task: "IMEI check + free preview"
     implemented: true
     working: true
@@ -139,6 +142,9 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ IMEI CHECK PASSED: POST /api/imei/check with valid 15-digit IMEI returns searchId, free preview (Brand, Model, Model Number, Capacity, Color), and locked:true. Invalid IMEI (non-15-digit) correctly returns 400. Deterministic check verified - same IMEI returns same model consistently."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ MONGODB CONNECTION FIX REGRESSION TEST PASSED: POST /api/imei/check with IMEI '359876543210987' returns 200 with searchId, free preview (Brand, Model, Model Number, Capacity, Color), and locked:true. Endpoint working correctly after DB connection fix."
   - task: "Serial check + free preview"
     implemented: true
     working: true
@@ -153,6 +159,9 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ SERIAL CHECK PASSED: POST /api/serial/check with valid 8-14 alphanumeric serial returns searchId, free preview (Brand, Model, Group, Type), and locked:true. Invalid serial (less than 8 chars) correctly returns 400."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ MONGODB CONNECTION FIX REGRESSION TEST PASSED: POST /api/serial/check with serial 'C39XY0ABJCLF' returns 200 with searchId, free preview (Brand, Model, Group, Type), and locked:true. Endpoint working correctly after DB connection fix."
   - task: "Unlock premium report (spends 1 credit)"
     implemented: true
     working: true
@@ -167,6 +176,9 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ UNLOCK & CREDITS FLOW PASSED: POST /api/unlock with valid searchId and auth deducts 1 credit and returns premium fields. Second unlock of SAME searchId does NOT deduct another credit (correct behavior). Unlocking without auth returns 401. When user has 0 credits, unlock returns 402 with code='NO_CREDITS'. All credit logic working correctly."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ MONGODB CONNECTION FIX REGRESSION TEST PASSED: POST /api/unlock with valid searchId and Bearer token successfully deducts 1 credit (3→2) and returns premium data. Endpoint working correctly after DB connection fix."
   - task: "Plans + mock checkout"
     implemented: true
     working: true
@@ -181,6 +193,9 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ PLANS & CHECKOUT PASSED: GET /api/plans returns 4 plans (single, starter, technician, business) with correct structure. POST /api/checkout with planId='starter' successfully adds 10 credits, creates order with status='paid', and returns updated credits + order details. Mock payment flow working correctly."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ MONGODB CONNECTION FIX REGRESSION TEST PASSED: GET /api/plans returns 200 with 4 plans (single, starter, technician, business). Endpoint working correctly after DB connection fix."
   - task: "Dashboard, history, reports, orders"
     implemented: true
     working: true
@@ -195,6 +210,9 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ USER DATA ENDPOINTS PASSED: GET /api/dashboard returns stats (credits, searches, reports, orders) and recent searches. GET /api/history returns user's search history. GET /api/reports returns user's premium reports. GET /api/orders returns user's purchase history. All endpoints correctly return 401 when accessed without authentication."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ MONGODB CONNECTION FIX REGRESSION TEST PASSED: All protected endpoints verified. GET /api/dashboard, /api/history, /api/reports, /api/orders all return 200 with Bearer token and 401 without token. All endpoints working correctly after DB connection fix."
   - task: "Admin endpoints (stats, users, plans, searches, orders, contacts)"
     implemented: true
     working: true
@@ -267,3 +285,8 @@ agent_communication:
     -message: "CUSTOMER FLOW UPDATE - please RE-TEST auth registration/login end-to-end. Registration was expanded to a professional form requiring: name, username, country, phone, email, password. New rules to verify: (a) all 6 fields required -> missing any returns 400; (b) username format 3-20 chars letters/numbers/underscore -> invalid returns 400; (c) phone basic validation -> invalid returns 400; (d) duplicate email -> 409; (e) NEW duplicate username (case-insensitive) -> 409; (f) valid registration returns token+user containing name/username/country/phone/email, credits=3, role=user, and NO password field. Then verify complete customer flow: register -> login (email+password, unchanged) -> GET /auth/me with Bearer token -> access protected endpoints (/dashboard, /history, /reports, /orders) -> confirm data isolation (a second user must NOT see the first user's history/orders) -> confirm credits/searches/orders are linked to the correct user id. Do NOT retest admin management or payments beyond what's needed to confirm credits link to the right user."
     -agent: "testing"
     -message: "✅ UPDATED CUSTOMER REGISTRATION FLOW FULLY VERIFIED - 38/38 TESTS PASSED (100% success rate). Comprehensive testing completed per review request. REGISTRATION VALIDATION (15 tests): (1) Valid registration with ALL 6 fields (name, username, country, phone, email, password) returns 200 with token+user containing all profile fields (name/username/country/phone/email), credits=3, role=user, NO password field in response. (2) Missing ANY of the 6 fields (name, username, country, phone, email, password) correctly returns 400. (3) Username validation working perfectly: 'ab' (too short) returns 400, 'has space' returns 400, 'toolongusernameover20chars_x' (too long) returns 400. (4) Invalid phone 'abc' returns 400. (5) Password < 6 chars returns 400. (6) Invalid email format returns 400. (7) Duplicate email returns 409. (8) NEW: Duplicate username (case-insensitive) returns 409 - verified by registering 'johnsmith1785541421' then attempting 'JOHNSMITH1785541421'. COMPLETE CUSTOMER FLOW (17 tests): Register User A → Login with email+password (200) → GET /auth/me returns all profile fields with no password → Protected endpoints (/dashboard, /history, /reports, /orders) accessible with Bearer token (all 200), return 401 without token. DATA ISOLATION (12 tests): User A performed IMEI check → unlock report (credits 3→2) → checkout starter plan (credits 2→12). User B registered and logged in. User B's /history is EMPTY (correct isolation). User B's /reports are EMPTY (correct isolation). User B's /orders are EMPTY (correct isolation). User A's /history contains 1 search. User A's /reports contain 1 report. User A's /orders contain 1 order. Complete data isolation verified - no cross-user data leakage. ADMIN LOGIN (1 test): admin@unlocktap.com/Admin@123 returns 200 with role='admin'. All security measures intact. NO CODE MODIFICATIONS MADE. Backend is production-ready."
+    -agent: "main"
+    -message: "BUGFIX (backend, MongoDB connection robustness). User reported Register/Login always return 500 Internal Server Error on the DEPLOYED/production build (preview works). Root cause identified in connectToMongo(): the module-level `client` was assigned BEFORE `client.connect()` resolved. If the first (cold-start) connection failed in production, `client` stayed truthy but `db` was undefined, so every subsequent request skipped reconnection and called seedData(undefined) -> permanent generic 500. FIX APPLIED: (1) connectToMongo now only caches `db` after a successful connect+ping, resets client/db to null on failure so the next request retries, added serverSelectionTimeoutMS/connectTimeoutMS=8000, wrapped seedData in try/catch (non-fatal). (2) throws clear error if MONGO_URL missing. (3) Reworked /api/health to run BEFORE connectToMongo and return exact Mongo error + env presence (hasMongoUrl/hasDbName/dbName/nodeEnv) + usersCount when healthy. Please RE-TEST in preview: GET /api/health returns {status:'ok', db:'connected', env:{...}, usersCount}; auth register (full profile fields) and login still work; general regression on protected endpoints. Note: production-only failure cannot be reproduced in preview (preview DB is healthy); goal is to confirm no regression and that /health diagnostics work."
+    -agent: "testing"
+    -message: "✅ MONGODB CONNECTION FIX REGRESSION TEST COMPLETE - 11/11 TEST GROUPS PASSED (100% success rate). Comprehensive regression testing performed after MongoDB connection robustness bugfix. ALL TESTS PASSED: (1) GET /api/health returns 200 with status='ok', db='connected', env object containing hasMongoUrl=true, hasDbName=true, dbName='your_database_name', nodeEnv, and usersCount=10 (numeric). Health endpoint now runs BEFORE connectToMongo and provides detailed diagnostics. (2) GET /api/ (root) returns 200 with status='ok', service='UnlockTap API'. (3) AUTH REGRESSION COMPLETE: POST /api/auth/register with all 6 fields (name, username, country, phone, email, password) returns 200 with token+user (3 credits, role=user, no password field). Duplicate email returns 409. Duplicate username (case-insensitive) returns 409. Missing fields return 400. POST /api/auth/login with valid credentials returns 200. Wrong password returns 401. GET /api/auth/me with Bearer token returns 200. Without token returns 401. Admin login (admin@unlocktap.com/Admin@123) returns 200 with role='admin'. (4) CORE ENDPOINTS REGRESSION: GET /api/plans returns 200 with 4 plans (single, starter, technician, business). POST /api/imei/check with IMEI '359876543210987' returns 200 with searchId, free preview, locked=true. POST /api/serial/check with serial 'C39XY0ABJCLF' returns 200 with searchId, free preview, locked=true. POST /api/unlock with valid searchId and Bearer token successfully deducts 1 credit (3→2) and returns premium data. GET /api/dashboard, /api/history, /api/reports, /api/orders all return 200 with Bearer token and 401 without token. NO REGRESSION DETECTED. All endpoints working correctly after MongoDB connection fix. Backend is stable and production-ready. NO CODE MODIFICATIONS MADE."
+

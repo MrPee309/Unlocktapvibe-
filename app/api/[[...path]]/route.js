@@ -11,16 +11,43 @@ let db
 let seeded = false
 
 async function connectToMongo() {
-  if (!client) {
-    client = new MongoClient(process.env.MONGO_URL)
+  // Return cached DB only if a successful connection was previously established
+  if (db) return db
+
+  if (!process.env.MONGO_URL) {
+    throw new Error('MONGO_URL environment variable is not set')
+  }
+
+  try {
+    if (!client) {
+      client = new MongoClient(process.env.MONGO_URL, {
+        serverSelectionTimeoutMS: 8000,
+        connectTimeoutMS: 8000,
+      })
+    }
     await client.connect()
+    // Verify the connection is actually usable
+    await client.db(process.env.DB_NAME).command({ ping: 1 })
     db = client.db(process.env.DB_NAME)
+
+    if (!seeded) {
+      try {
+        await seedData(db)
+      } catch (seedErr) {
+        // Seeding failure must not permanently break auth/API requests
+        console.error('Seed error (non-fatal):', seedErr)
+      }
+      seeded = true
+    }
+    return db
+  } catch (err) {
+    // Reset cached client/db so the NEXT request retries a fresh connection
+    // (prevents a failed cold-start from permanently returning 500s)
+    try { await client?.close() } catch { /* ignore */ }
+    client = null
+    db = null
+    throw err
   }
-  if (!seeded) {
-    await seedData(db)
-    seeded = true
-  }
-  return db
 }
 
 // ------------------------------------------------------------------
@@ -271,12 +298,36 @@ async function handleRoute(request, { params }) {
   const method = request.method
 
   try {
-    const db = await connectToMongo()
-
-    // ---------------- Health ----------------
-    if (route === '/' || route === '/health') {
+    // ---------------- Health (runs BEFORE DB connect so it can report the exact connection error) ----------------
+    if (route === '/' && method === 'GET') {
       return json({ status: 'ok', service: 'UnlockTap API' })
     }
+    if (route === '/health' && method === 'GET') {
+      const envInfo = {
+        hasMongoUrl: !!process.env.MONGO_URL,
+        hasDbName: !!process.env.DB_NAME,
+        dbName: process.env.DB_NAME || null,
+        nodeEnv: process.env.NODE_ENV || null,
+      }
+      try {
+        const d = await connectToMongo()
+        await d.command({ ping: 1 })
+        const usersCount = await d.collection('users').countDocuments()
+        return json({ status: 'ok', db: 'connected', env: envInfo, usersCount })
+      } catch (err) {
+        // TEMPORARY diagnostic: surface the exact MongoDB connection error
+        return json({
+          status: 'error',
+          db: 'connection_failed',
+          env: envInfo,
+          error: String(err && err.message ? err.message : err),
+          name: err && err.name ? err.name : null,
+          code: err && err.code ? err.code : null,
+        }, 500)
+      }
+    }
+
+    const db = await connectToMongo()
 
     // ---------------- AUTH ----------------
     if (route === '/auth/register' && method === 'POST') {

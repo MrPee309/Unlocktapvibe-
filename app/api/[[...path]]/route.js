@@ -10,17 +10,47 @@ let client
 let db
 let seeded = false
 
+// Accept either MONGO_URL (preferred) or MONGO_URI (fallback) so the app works
+// regardless of which name the deployment platform injects the connection string as.
+function getMongoUri() {
+  return process.env.MONGO_URL || process.env.MONGO_URI || ''
+}
+function getMongoVarUsed() {
+  if (process.env.MONGO_URL) return 'MONGO_URL'
+  if (process.env.MONGO_URI) return 'MONGO_URI'
+  return null
+}
+// Safely describe the connection string WITHOUT leaking the password.
+function maskMongoUri(uri) {
+  if (!uri) return null
+  try {
+    const m = uri.match(/^(mongodb(?:\+srv)?:\/\/)(?:([^:@/]+)(?::([^@/]+))?@)?([^/?]+)(\/[^?]*)?(\?.*)?$/)
+    if (!m) return { note: 'unparseable connection string' }
+    return {
+      scheme: m[1],
+      username: m[2] || null,
+      hasPassword: !!m[3],
+      host: m[4] || null,
+      pathDb: m[5] ? m[5].replace(/^\//, '') : null,
+      hasQuery: !!m[6],
+    }
+  } catch {
+    return { note: 'error parsing connection string' }
+  }
+}
+
 async function connectToMongo() {
   // Return cached DB only if a successful connection was previously established
   if (db) return db
 
-  if (!process.env.MONGO_URL) {
-    throw new Error('MONGO_URL environment variable is not set')
+  const uri = getMongoUri()
+  if (!uri) {
+    throw new Error('No MongoDB connection string found. Set MONGO_URL (or MONGO_URI) in the deployment environment variables.')
   }
 
   try {
     if (!client) {
-      client = new MongoClient(process.env.MONGO_URL, {
+      client = new MongoClient(uri, {
         serverSelectionTimeoutMS: 8000,
         connectTimeoutMS: 8000,
       })
@@ -304,10 +334,13 @@ async function handleRoute(request, { params }) {
     }
     if (route === '/health' && method === 'GET') {
       const envInfo = {
+        mongoVarUsed: getMongoVarUsed(),
         hasMongoUrl: !!process.env.MONGO_URL,
+        hasMongoUri: !!process.env.MONGO_URI,
         hasDbName: !!process.env.DB_NAME,
         dbName: process.env.DB_NAME || null,
         nodeEnv: process.env.NODE_ENV || null,
+        connection: maskMongoUri(getMongoUri()), // password masked
       }
       try {
         const d = await connectToMongo()
@@ -315,14 +348,26 @@ async function handleRoute(request, { params }) {
         const usersCount = await d.collection('users').countDocuments()
         return json({ status: 'ok', db: 'connected', env: envInfo, usersCount })
       } catch (err) {
+        const message = String(err && err.message ? err.message : err)
+        const code = err && err.code ? err.code : null
+        // Targeted hint for the most common Atlas failures
+        let hint = null
+        if (/bad auth|authentication failed/i.test(message) || code === 8000) {
+          hint = 'Atlas rejected the credentials. Verify the DB username & password in the connection string match a Database User in Atlas (Database Access), that the password is URL-encoded if it contains special characters (@ : / ? # [ ] %), and that the user has readWrite on the target database. Also confirm authSource (usually admin) is correct.'
+        } else if (/ENOTFOUND|querySrv|getaddrinfo/i.test(message)) {
+          hint = 'DNS/host resolution failed. Check the cluster host in the SRV connection string is correct.'
+        } else if (/timed out|ETIMEDOUT|serverSelectionTimeout/i.test(message)) {
+          hint = 'Connection timed out. In Atlas > Network Access, allow the deployment IP (or 0.0.0.0/0 for testing).'
+        }
         // TEMPORARY diagnostic: surface the exact MongoDB connection error
         return json({
           status: 'error',
           db: 'connection_failed',
           env: envInfo,
-          error: String(err && err.message ? err.message : err),
+          error: message,
           name: err && err.name ? err.name : null,
-          code: err && err.code ? err.code : null,
+          code,
+          hint,
         }, 500)
       }
     }

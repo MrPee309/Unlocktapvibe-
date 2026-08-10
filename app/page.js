@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Smartphone, ShieldCheck, Search, Lock, Zap, Globe, CheckCircle2, XCircle,
   CreditCard, LayoutDashboard, LogOut, User as UserIcon, Menu, X, Star,
   Cpu, Fingerprint, ScanLine, ChevronRight, Mail, Sparkles, BadgeCheck,
   Users, FileText, Settings, DollarSign, History, Loader2, Apple,
+  Cloud, MonitorSmartphone, Unlock, KeyRound, Tablet, Laptop, Monitor, ChevronLeft, ShieldAlert,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -301,68 +302,236 @@ function Navbar({ navigate, route, user, logout, lang, changeLang, t }) {
 // ==================================================================
 // Home
 // ==================================================================
+// ------------------------------------------------------------------
+// Home page data
+// ------------------------------------------------------------------
+const CAROUSEL_IMG = {
+  iphone: 'https://images.unsplash.com/photo-1607936854279-55e8a4c64888?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwxfHxpcGhvbmUlMjBwcm98ZW58MHx8fGJsdWV8MTc4NjM5NTc4NHww&ixlib=rb-4.1.0&q=85&w=1200',
+  macbook: 'https://images.unsplash.com/photo-1651241680016-cc9e407e7dc3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHw0fHxtYWNib29rfGVufDB8fHxibHVlfDE3ODYzOTU3ODR8MA&ixlib=rb-4.1.0&q=85&w=1200',
+  ipad: 'https://images.pexels.com/photos/1334598/pexels-photo-1334598.jpeg?cs=srgb&fm=jpg&w=1200',
+  person: 'https://images.unsplash.com/photo-1512428559087-560fa5ceab42?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxwZXJzb24lMjBob2xkaW5nJTIwcGhvbmV8ZW58MHx8fHwxNzg2Mzk1Nzk2fDA&ixlib=rb-4.1.0&q=85&w=1200',
+}
+
+const SLIDES = [
+  { type: 'image', image: CAROUSEL_IMG.iphone, tag: 'iPhone 17 Pro Max', title: 'iPhone Device Services', subtitle: 'Full IMEI & iCloud verification for the latest iPhone', icon: Smartphone },
+  { type: 'image', image: CAROUSEL_IMG.person, tag: 'iPhone 17 Pro', title: 'IMEI Check & Device Verification', subtitle: 'Confirm authenticity, blacklist & carrier status', icon: ScanLine },
+  { type: 'image', image: CAROUSEL_IMG.macbook, tag: 'MacBook Pro', title: 'Mac Device Services', subtitle: 'Warranty, coverage & serial checks for Mac', icon: Laptop },
+  { type: 'image', image: CAROUSEL_IMG.ipad, tag: 'iPad Pro', title: 'iPad Verification', subtitle: 'Verify iPad Pro & iPad Air details instantly', icon: Tablet },
+  { type: 'service', gradient: 'from-sky-500 via-blue-600 to-blue-700', title: 'iCloud Lock & Status', subtitle: 'Detect Activation Lock / Find My before you buy', icon: Cloud, chip: 'iCloud: Clean' },
+  { type: 'service', gradient: 'from-indigo-500 via-blue-600 to-blue-800', title: 'MDM Lock & Device Management', subtitle: 'Check remote management / enrollment status', icon: MonitorSmartphone, chip: 'MDM: Not Enrolled' },
+  { type: 'service', gradient: 'from-blue-600 via-cyan-600 to-teal-600', title: 'UnlockTap Verification & Unlock', subtitle: 'Premium reports & unlock services in seconds', icon: Unlock, chip: 'Verified' },
+]
+
+const SERVICES = [
+  { icon: ScanLine, title: 'IMEI Check', desc: 'Validate any 15-digit IMEI and reveal full device details.', route: 'imei' },
+  { icon: Cloud, title: 'iCloud Status', desc: 'Check Find My / Activation Lock — Clean or Locked.', route: 'imei' },
+  { icon: MonitorSmartphone, title: 'MDM Status', desc: 'Detect remote device management / enrollment status.', route: 'imei' },
+  { icon: BadgeCheck, title: 'Device Verification', desc: 'Confirm authenticity, blacklist and warranty coverage.', route: 'imei' },
+  { icon: Unlock, title: 'Unlock Services', desc: 'Carrier & SIM-lock status and unlock eligibility.', route: 'pricing' },
+  { icon: Fingerprint, title: 'Serial Check', desc: 'Look up Apple serial numbers for coverage details.', route: 'serial' },
+]
+
+const SUPPORTED_DEVICES = [
+  { icon: Smartphone, name: 'iPhone', note: 'iPhone 17 · 17 Pro · 17 Pro Max & more' },
+  { icon: Tablet, name: 'iPad', note: 'iPad Pro · iPad Air · iPad' },
+  { icon: Laptop, name: 'MacBook', note: 'MacBook Pro · MacBook Air' },
+  { icon: Monitor, name: 'Mac', note: 'iMac · Mac mini · Mac Studio' },
+]
+
+// ------------------------------------------------------------------
+// Hero Carousel (auto-rotate, arrows, swipe, dots, no layout shift)
+// ------------------------------------------------------------------
+function HeroCarousel() {
+  const count = SLIDES.length
+  const [[index, dir], setState] = useState([0, 1])
+  const [paused, setPaused] = useState(false)
+  const touch = useRef(0)
+
+  // Preload slide images so transitions are smooth (no gray flash / layout shift)
+  useEffect(() => {
+    SLIDES.filter((s) => s.type === 'image').forEach((s) => { const img = new Image(); img.src = s.image })
+  }, [])
+
+  const paginate = useCallback((d) => setState(([i]) => [(i + d + count) % count, d]), [count])
+  const goTo = (n) => setState(([i]) => [n, n > i ? 1 : -1])
+
+  useEffect(() => {
+    if (paused) return
+    const id = setInterval(() => setState(([i]) => [(i + 1) % count, 1]), 5000)
+    return () => clearInterval(id)
+  }, [paused, count])
+
+  const onTouchStart = (e) => { touch.current = e.touches[0].clientX }
+  const onTouchEnd = (e) => {
+    const dx = e.changedTouches[0].clientX - touch.current
+    if (dx > 50) paginate(-1)
+    else if (dx < -50) paginate(1)
+  }
+
+  const variants = {
+    enter: (d) => ({ opacity: 0, x: d > 0 ? 80 : -80, scale: 0.98 }),
+    center: { opacity: 1, x: 0, scale: 1 },
+    exit: (d) => ({ opacity: 0, x: d > 0 ? -80 : 80, scale: 0.98 }),
+  }
+
+  const s = SLIDES[index]
+  const Icon = s.icon
+
+  return (
+    <div
+      className="relative select-none"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Fixed-height frame prevents layout shift */}
+      <div className="relative h-[380px] overflow-hidden rounded-3xl border border-slate-200 bg-slate-900 shadow-2xl shadow-blue-500/10 sm:h-[440px] lg:h-[500px]">
+        <AnimatePresence initial={false} custom={dir} mode="popLayout">
+          <motion.div
+            key={index}
+            custom={dir}
+            variants={variants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0"
+          >
+            {s.type === 'image' ? (
+              <div className="relative h-full w-full bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900">
+                <Icon className="absolute left-1/2 top-1/2 h-40 w-40 -translate-x-1/2 -translate-y-1/2 text-white/5" />
+                <img src={s.image} alt={s.title} loading="eager" decoding="async" fetchPriority="high" onError={(e) => { e.currentTarget.style.display = 'none' }} className="relative h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/25 to-transparent" />
+                <div className="absolute left-5 top-5">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-blue-700 backdrop-blur">
+                    <Icon className="h-3.5 w-3.5" />{s.tag}
+                  </span>
+                </div>
+                <div className="absolute bottom-5 left-5 right-5 text-white">
+                  <h3 className="text-2xl font-bold leading-tight drop-shadow sm:text-3xl">{s.title}</h3>
+                  <p className="mt-1 max-w-md text-sm text-white/90">{s.subtitle}</p>
+                </div>
+              </div>
+            ) : (
+              <div className={`relative flex h-full w-full flex-col items-center justify-center bg-gradient-to-br ${s.gradient} p-8 text-center text-white`}>
+                <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
+                <div className="pointer-events-none absolute -bottom-12 -left-12 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+                <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-white/15 backdrop-blur">
+                  <Icon className="h-10 w-10" />
+                </div>
+                <h3 className="text-2xl font-bold sm:text-3xl">{s.title}</h3>
+                <p className="mt-2 max-w-md text-sm text-white/90">{s.subtitle}</p>
+                <span className="mt-5 inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 text-sm font-medium backdrop-blur">
+                  <CheckCircle2 className="h-4 w-4" />{s.chip}
+                </span>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Arrows */}
+        <button aria-label="Previous slide" onClick={() => paginate(-1)}
+          className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-slate-800 shadow-lg backdrop-blur transition hover:bg-white">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button aria-label="Next slide" onClick={() => paginate(1)}
+          className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-slate-800 shadow-lg backdrop-blur transition hover:bg-white">
+          <ChevronRight className="h-5 w-5" />
+        </button>
+
+        {/* Pagination dots */}
+        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2">
+          {SLIDES.map((_, i) => (
+            <button key={i} aria-label={`Go to slide ${i + 1}`} onClick={() => goTo(i)}
+              className={`h-2 rounded-full transition-all ${i === index ? 'w-6 bg-white' : 'w-2 bg-white/50 hover:bg-white/80'}`} />
+          ))}
+        </div>
+      </div>
+
+      {/* Floating service cards (desktop) */}
+      <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -left-5 top-10 hidden rounded-2xl border border-slate-100 bg-white/95 p-3 shadow-xl backdrop-blur lg:flex">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100"><Cloud className="h-4.5 w-4.5 text-emerald-600" /></div>
+          <div><p className="text-[11px] text-slate-500">iCloud</p><p className="text-xs font-semibold text-emerald-600">Clean</p></div>
+        </div>
+      </motion.div>
+      <motion.div animate={{ y: [0, 8, 0] }} transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -right-5 bottom-16 hidden rounded-2xl border border-slate-100 bg-white/95 p-3 shadow-xl backdrop-blur lg:flex">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100"><ScanLine className="h-4.5 w-4.5 text-blue-600" /></div>
+          <div><p className="text-[11px] text-slate-500">IMEI</p><p className="text-xs font-semibold text-blue-600">Verified</p></div>
+        </div>
+      </motion.div>
+      <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute right-8 -top-4 hidden rounded-2xl border border-slate-100 bg-white/95 p-3 shadow-xl backdrop-blur xl:flex">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100"><MonitorSmartphone className="h-4.5 w-4.5 text-indigo-600" /></div>
+          <div><p className="text-[11px] text-slate-500">MDM</p><p className="text-xs font-semibold text-indigo-600">Not Enrolled</p></div>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------
+// Home
+// ------------------------------------------------------------------
 function Home(props) {
   const { navigate, t } = props
-  const features = [
-    { icon: Fingerprint, title: 'iCloud & Activation Lock', desc: 'Instantly detect Find My iPhone and Activation Lock status before you buy.' },
-    { icon: ShieldCheck, title: 'Blacklist Check', desc: 'Verify if a device has been reported lost, stolen or blacklisted.' },
-    { icon: BadgeCheck, title: 'Warranty & Coverage', desc: 'AppleCare eligibility, warranty status and estimated purchase date.' },
-    { icon: Cpu, title: 'Full Specs', desc: 'Model, capacity, color, carrier, SIM-lock and country of origin.' },
-    { icon: Zap, title: 'Instant Results', desc: 'Reports generated in seconds from our verification engine.' },
-    { icon: Globe, title: 'Multi-language', desc: 'Available in English, French and Haitian Creole.' },
-  ]
   return (
     <div>
-      {/* Hero */}
+      {/* HERO */}
       <section className="relative overflow-hidden bg-gradient-to-b from-blue-50/60 via-white to-white">
         <div className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
-        <div className="container grid items-center gap-12 py-16 lg:grid-cols-2 lg:py-24">
+        <div className="pointer-events-none absolute top-40 -left-24 h-72 w-72 rounded-full bg-cyan-200/30 blur-3xl" />
+        <div className="container grid items-center gap-12 py-14 lg:grid-cols-2 lg:py-20">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
             <Badge className="mb-5 rounded-full border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50"><Sparkles className="mr-1 h-3.5 w-3.5" />{t('hero_badge')}</Badge>
-            <h1 className="text-4xl font-bold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">{t('hero_title')}</h1>
-            <p className="mt-5 max-w-xl text-lg text-slate-600">{t('hero_sub')}</p>
+            <h1 className="text-4xl font-bold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+              Verify any Apple device with <span className="bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">UnlockTap</span>
+            </h1>
+            <p className="mt-5 max-w-xl text-lg text-slate-600">
+              Instant IMEI & serial lookups for iPhone, iPad and Mac — check iCloud lock, MDM status, blacklist, carrier and warranty from one premium dashboard.
+            </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button size="lg" className="rounded-full bg-blue-600 px-7 hover:bg-blue-700" onClick={() => navigate('imei')}>
-                <Smartphone className="mr-2 h-5 w-5" />{t('hero_cta1')}
+                <Smartphone className="mr-2 h-5 w-5" />Check IMEI
               </Button>
-              <Button size="lg" variant="outline" className="rounded-full border-slate-300 px-7" onClick={() => navigate('serial')}>
-                <Apple className="mr-2 h-5 w-5" />{t('hero_cta2')}
+              <Button size="lg" variant="outline" className="rounded-full border-slate-300 px-7" onClick={() => navigate('register')}>
+                {t('get_started')} <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
             </div>
-            <div className="mt-8 flex items-center gap-6 text-sm text-slate-500">
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-500">
               <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-blue-600" />Free preview</div>
-              <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-blue-600" />No expiry credits</div>
-              <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-blue-600" />Instant</div>
+              <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-blue-600" />iCloud & MDM checks</div>
+              <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-blue-600" />Instant results</div>
             </div>
           </motion.div>
-          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6 }} className="relative">
-            <div className="overflow-hidden rounded-3xl border border-slate-200 shadow-2xl shadow-blue-500/10">
-              <img src={HERO_IMG} alt="Apple device verification" className="h-[420px] w-full object-cover" />
-            </div>
-            <div className="absolute -bottom-5 -left-5 rounded-2xl border border-slate-100 bg-white p-4 shadow-xl">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100"><CheckCircle2 className="h-5 w-5 text-green-600" /></div>
-                <div><p className="text-xs text-slate-500">iCloud Status</p><p className="text-sm font-semibold text-green-600">Clean</p></div>
-              </div>
-            </div>
+
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6 }}>
+            <HeroCarousel />
           </motion.div>
         </div>
       </section>
 
-      {/* Features */}
+      {/* SERVICES */}
       <section className="container py-20">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('features_title')}</h2>
-          <p className="mt-3 text-slate-600">{t('features_sub')}</p>
+          <Badge className="mb-3 rounded-full border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50">Our Services</Badge>
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Everything you need to verify a device</h2>
+          <p className="mt-3 text-slate-600">Professional-grade checks trusted by technicians and resellers worldwide.</p>
         </div>
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f, i) => (
+          {SERVICES.map((s, i) => (
             <motion.div key={i} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}>
-              <Card className="h-full rounded-2xl border-slate-100 transition-shadow hover:shadow-lg hover:shadow-blue-500/5">
+              <Card className="group h-full cursor-pointer rounded-2xl border-slate-100 transition-all hover:-translate-y-1 hover:border-blue-200 hover:shadow-xl hover:shadow-blue-500/10" onClick={() => navigate(s.route)}>
                 <CardContent className="p-6">
-                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><f.icon className="h-6 w-6" /></div>
-                  <h3 className="text-lg font-semibold">{f.title}</h3>
-                  <p className="mt-2 text-sm text-slate-600">{f.desc}</p>
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white"><s.icon className="h-6 w-6" /></div>
+                  <h3 className="text-lg font-semibold">{s.title}</h3>
+                  <p className="mt-2 text-sm text-slate-600">{s.desc}</p>
+                  <span className="mt-4 inline-flex items-center text-sm font-medium text-blue-600 opacity-0 transition-opacity group-hover:opacity-100">Learn more <ChevronRight className="ml-1 h-4 w-4" /></span>
                 </CardContent>
               </Card>
             </motion.div>
@@ -370,27 +539,25 @@ function Home(props) {
         </div>
       </section>
 
-      {/* How it works / CTA image */}
+      {/* SUPPORTED DEVICES */}
       <section className="bg-slate-50 py-20">
-        <div className="container grid items-center gap-12 lg:grid-cols-2">
-          <div className="overflow-hidden rounded-3xl border border-slate-200 shadow-xl">
-            <img src={CTA_IMG} alt="Apple branding" className="h-[360px] w-full object-cover" />
+        <div className="container">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Supported devices</h2>
+            <p className="mt-3 text-slate-600">Verify the full range of modern Apple hardware.</p>
           </div>
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight">How it works</h2>
-            <div className="mt-8 space-y-6">
-              {[
-                ['Enter IMEI or Serial', 'Type the 15-digit IMEI or Apple serial number.'],
-                ['Get a free preview', 'Instantly see brand, model, capacity and color.'],
-                ['Unlock full report', 'Spend 1 credit to reveal iCloud, blacklist, warranty & more.'],
-              ].map(([title, desc], i) => (
-                <div key={i} className="flex gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">{i + 1}</div>
-                  <div><h4 className="font-semibold">{title}</h4><p className="text-sm text-slate-600">{desc}</p></div>
-                </div>
-              ))}
-            </div>
-            <Button className="mt-8 rounded-full bg-blue-600 hover:bg-blue-700" onClick={() => navigate('imei')}>{t('check_now')} <ChevronRight className="ml-1 h-4 w-4" /></Button>
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {SUPPORTED_DEVICES.map((d, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}>
+                <Card className="h-full rounded-2xl border-slate-100 text-center">
+                  <CardContent className="flex flex-col items-center p-8">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20"><d.icon className="h-8 w-8" /></div>
+                    <h3 className="text-lg font-semibold">{d.name}</h3>
+                    <p className="mt-1 text-xs text-slate-500">{d.note}</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>
@@ -430,9 +597,28 @@ function Home(props) {
           <FAQAccordion />
         </div>
       </section>
+
+      {/* CTA */}
+      <section className="container py-20">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-600 px-6 py-16 text-center text-white shadow-2xl shadow-blue-500/20">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-20 -left-16 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+          <h2 className="relative text-3xl font-bold tracking-tight sm:text-4xl">Check Your Device Now</h2>
+          <p className="relative mx-auto mt-3 max-w-xl text-blue-50">Run an instant IMEI or serial verification and unlock a full premium report in seconds.</p>
+          <div className="relative mt-8 flex flex-wrap justify-center gap-3">
+            <Button size="lg" className="rounded-full bg-white px-8 text-blue-700 hover:bg-blue-50" onClick={() => navigate('imei')}>
+              <ScanLine className="mr-2 h-5 w-5" />Check IMEI
+            </Button>
+            <Button size="lg" variant="outline" className="rounded-full border-white/60 bg-transparent px-8 text-white hover:bg-white/10" onClick={() => navigate('serial')}>
+              <Apple className="mr-2 h-5 w-5" />Check Serial
+            </Button>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
+
 
 const FAQ_ITEMS = [
   ['What is an IMEI number?', 'The IMEI (International Mobile Equipment Identity) is a unique 15-digit number that identifies your device. Dial *#06# on any phone to see it.'],

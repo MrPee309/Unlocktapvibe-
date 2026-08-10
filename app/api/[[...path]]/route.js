@@ -13,8 +13,17 @@ let seeded = false
 // Canonical connection-string variable is MONGO_URL. We also accept MONGO_URI and
 // MONGODB_URI as fallbacks so the app connects regardless of which name the hosting
 // platform injects. Credentials are NEVER logged or returned anywhere.
+function sanitizeUriValue(v) {
+  if (!v) return ''
+  let s = String(v).trim()
+  // Strip a single layer of accidental wrapping quotes (a very common dashboard paste bug)
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim()
+  }
+  return s
+}
 function getMongoUri() {
-  return process.env.MONGO_URL || process.env.MONGO_URI || process.env.MONGODB_URI || ''
+  return sanitizeUriValue(process.env.MONGO_URL || process.env.MONGO_URI || process.env.MONGODB_URI || '')
 }
 function getMongoVarUsed() {
   if (process.env.MONGO_URL) return 'MONGO_URL'
@@ -39,6 +48,74 @@ function maskMongoUri(uri) {
   } catch {
     return { note: 'error parsing connection string' }
   }
+}
+
+// Remove any embedded credentials from an error message before returning it.
+function sanitizeError(err) {
+  let m = String(err && err.message ? err.message : err)
+  // Redact userinfo in any URI that may appear inside driver error messages
+  m = m.replace(/(mongodb(?:\+srv)?:\/\/)[^@\s]*@/gi, '$1<redacted>@')
+  return m
+}
+
+// Parse the RAW connection string into SAFE, non-secret facts.
+// Never returns the username value or password value.
+function analyzeUriSafe(raw) {
+  const info = {
+    exists: !!raw,
+    uriLength: raw ? raw.length : 0,
+    hadWhitespaceEdges: false,
+    hadWrappingQuotes: false,
+    isSrvFormat: false,
+    scheme: null,
+    usernamePresent: false,
+    usernameLength: 0,
+    passwordPresent: false,
+    passwordHasUnencodedSpecials: false,
+    usernameHasUnencodedSpecials: false,
+    host: null,
+    databaseFromUri: null,
+    hasQueryParams: false,
+  }
+  if (!raw) return info
+  const trimmed = String(raw).trim()
+  info.hadWhitespaceEdges = trimmed !== raw
+  let s = trimmed
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    info.hadWrappingQuotes = true
+    s = s.slice(1, -1).trim()
+  }
+  info.isSrvFormat = s.startsWith('mongodb+srv://')
+  const schemeMatch = s.match(/^(mongodb(?:\+srv)?:\/\/)/)
+  info.scheme = schemeMatch ? schemeMatch[1] : null
+  if (!info.scheme) return info
+  const rest = s.slice(info.scheme.length)
+  const authorityEnd = rest.search(/[\/?]/)
+  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd)
+  const afterAuthority = authorityEnd === -1 ? '' : rest.slice(authorityEnd)
+  const lastAt = authority.lastIndexOf('@')
+  let userinfo = ''
+  let hostpart = authority
+  if (lastAt !== -1) { userinfo = authority.slice(0, lastAt); hostpart = authority.slice(lastAt + 1) }
+  info.host = hostpart || null
+  if (userinfo) {
+    const colon = userinfo.indexOf(':')
+    const user = colon === -1 ? userinfo : userinfo.slice(0, colon)
+    const pass = colon === -1 ? '' : userinfo.slice(colon + 1)
+    // Characters that MUST be percent-encoded inside userinfo per RFC 3986 / Mongo docs
+    const mustEncode = /[@:/?#[\]]/
+    info.usernamePresent = !!user
+    info.usernameLength = user ? user.length : 0
+    info.passwordPresent = !!pass
+    info.usernameHasUnencodedSpecials = mustEncode.test(user)
+    info.passwordHasUnencodedSpecials = mustEncode.test(pass)
+  }
+  const q = afterAuthority.indexOf('?')
+  const path = q === -1 ? afterAuthority : afterAuthority.slice(0, q)
+  info.hasQueryParams = q !== -1
+  const dbFromPath = path.replace(/^\//, '')
+  info.databaseFromUri = dbFromPath || null
+  return info
 }
 
 async function connectToMongo() {
@@ -372,6 +449,76 @@ async function handleRoute(request, { params }) {
           code,
           hint,
         }, 500)
+      }
+    }
+
+    // ---------------- DB DIAGNOSTIC (safe; runs a FRESH isolated connection attempt) ----------------
+    // Attempts a brand-new connection using the EXACT process.env.MONGO_URL currently available
+    // to the deployment, then reports ONLY safe facts + the stage where it failed.
+    // Never returns the username value, password, or full connection string.
+    if (route === '/db-diagnostic' && method === 'GET') {
+      const rawEnv = process.env.MONGO_URL || process.env.MONGO_URI || process.env.MONGODB_URI || ''
+      const analysis = analyzeUriSafe(rawEnv)
+      const safe = {
+        mongoUrlExists: !!process.env.MONGO_URL,
+        variableUsed: getMongoVarUsed(),
+        isSrvFormat: analysis.isSrvFormat,
+        scheme: analysis.scheme,
+        host: analysis.host,                       // hostname only, no credentials
+        databaseFromUri: analysis.databaseFromUri, // db name in the URI path (if any)
+        dbNameEnv: process.env.DB_NAME || null,
+        effectiveDatabase: process.env.DB_NAME || analysis.databaseFromUri || '(driver default: test)',
+        usernamePresent: analysis.usernamePresent,
+        usernameLength: analysis.usernameLength,   // length only, not the value
+        passwordPresent: analysis.passwordPresent,
+        passwordHasUnencodedSpecials: analysis.passwordHasUnencodedSpecials,
+        usernameHasUnencodedSpecials: analysis.usernameHasUnencodedSpecials,
+        hadWhitespaceEdges: analysis.hadWhitespaceEdges,
+        hadWrappingQuotes: analysis.hadWrappingQuotes,
+        uriLength: analysis.uriLength,
+      }
+
+      if (!rawEnv) {
+        return json({ status: 'error', connection: 'failed', failureStage: 'missing_env', message: 'No MongoDB connection string found in MONGO_URL / MONGO_URI / MONGODB_URI.', ...safe }, 500)
+      }
+
+      // Use the sanitized value (trim + strip wrapping quotes) — the same value the app now uses.
+      const testUri = sanitizeUriValue(rawEnv)
+      let stage = 'uri_parse'
+      let testClient = null
+      try {
+        testClient = new MongoClient(testUri, { serverSelectionTimeoutMS: 6000, connectTimeoutMS: 6000 })
+        stage = 'dns_tls_network'   // parsing succeeded; connect performs DNS/TLS + auth handshake
+        await testClient.connect()
+        stage = 'authentication'    // if connect resolved, the auth handshake also succeeded
+        await testClient.db(process.env.DB_NAME).command({ ping: 1 })
+        await testClient.close()
+        return json({ status: 'ok', connection: 'success', failureStage: null, ...safe })
+      } catch (err) {
+        try { await testClient?.close() } catch { /* ignore */ }
+        const msg = sanitizeError(err)
+        const code = err && err.code ? err.code : null
+        const name = err && err.name ? err.name : null
+        // Classify WHERE it failed: uri_parse | dns_tls_network | authentication
+        let failureStage = stage
+        if (name === 'MongoParseError' || /invalid connection string|uri malformed|parse/i.test(msg)) {
+          failureStage = 'uri_parse'
+        } else if (/bad auth|authentication failed|AuthenticationFailed|SCRAM|not authorized/i.test(msg) || code === 8000 || code === 18) {
+          failureStage = 'authentication'
+        } else if (/ENOTFOUND|querySrv|getaddrinfo|ETIMEDOUT|ECONNREFUSED|TLS|SSL|server selection|ServerSelection|topology|network/i.test(msg)) {
+          failureStage = 'dns_tls_network'
+        }
+        let hint = null
+        if (failureStage === 'authentication') {
+          hint = analysis.passwordHasUnencodedSpecials
+            ? 'AUTH failed AND the password contains characters that must be percent-encoded (@ : / ? # [ ]). This is the most likely cause: URL-encode the password in MONGO_URL (e.g. @ -> %40, # -> %23, / -> %2F).'
+            : 'AUTH handshake reached Atlas but credentials were rejected. The DB username/password in MONGO_URL do not match a Database User in Atlas, OR the user lacks access to this database/authSource. Confirm the exact username and that the new password value in Vercel matches the one saved in Atlas (no trailing spaces).'
+        } else if (failureStage === 'uri_parse') {
+          hint = 'The connection string could not be parsed. Check for stray quotes/spaces (hadWrappingQuotes/hadWhitespaceEdges), unencoded special characters in the password, or a malformed query string.'
+        } else if (failureStage === 'dns_tls_network') {
+          hint = 'Reached before authentication: DNS/TLS/network. Verify the cluster host and that Atlas Network Access allows the deployment IP (0.0.0.0/0 for testing).'
+        }
+        return json({ status: 'error', connection: 'failed', failureStage, error: msg, code, name, hint, ...safe }, 500)
       }
     }
 

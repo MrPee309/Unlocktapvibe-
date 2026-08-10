@@ -19,6 +19,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Toaster } from '@/components/ui/sonner'
 import { toast } from 'sonner'
@@ -693,6 +694,7 @@ function AuthShell({ title, sub, children, footer, wide, onHome }) {
 function AuthPage({ mode, navigate, setAuth, t }) {
   const isLogin = mode === 'login'
   const [form, setForm] = useState({ name: '', username: '', country: '', phone: '', email: '', password: '', confirmPassword: '' })
+  const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const upd = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
@@ -701,12 +703,13 @@ function AuthPage({ mode, navigate, setAuth, t }) {
     if (!isLogin) {
       if (!form.country) { toast.error('Please select your country'); return }
       if (form.password !== form.confirmPassword) { toast.error('Passwords do not match'); return }
+      if (!agreed) { toast.error('You must agree to the Terms & Conditions and Privacy Policy to create an account.'); return }
     }
     setLoading(true)
     try {
       const payload = isLogin
         ? { email: form.email, password: form.password }
-        : { name: form.name, username: form.username, country: form.country, phone: form.phone, email: form.email, password: form.password }
+        : { name: form.name, username: form.username, country: form.country, phone: form.phone, email: form.email, password: form.password, termsAccepted: agreed }
       const res = await api(isLogin ? '/auth/login' : '/auth/register', { method: 'POST', body: payload })
       setAuth(res.token, res.user)
       toast.success(isLogin ? 'Welcome back!' : 'Account created! You got 3 free credits.')
@@ -760,6 +763,17 @@ function AuthPage({ mode, navigate, setAuth, t }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div><Label>Password</Label><Input type="password" className={inputCls} value={form.password} onChange={upd('password')} required /></div>
             <div><Label>Confirm Password</Label><Input type="password" className={inputCls} value={form.confirmPassword} onChange={upd('confirmPassword')} required /></div>
+          </div>
+          <div className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${agreed ? 'border-blue-200 bg-blue-50/50' : 'border-slate-200 bg-slate-50'}`}>
+            <Checkbox id="terms" checked={agreed} onCheckedChange={(v) => setAgreed(v === true)} className="mt-0.5 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600" />
+            <Label htmlFor="terms" className="cursor-pointer text-xs font-normal leading-relaxed text-slate-600">
+              I agree to the{' '}
+              <button type="button" onClick={() => navigate('terms')} className="font-medium text-blue-600 underline hover:text-blue-700">Terms &amp; Conditions</button>
+              {' '}and{' '}
+              <button type="button" onClick={() => navigate('privacy')} className="font-medium text-blue-600 underline hover:text-blue-700">Privacy Policy</button>
+              <span className="ml-1 text-red-500">*</span>
+              <span className="mt-1 block text-[11px] text-slate-400">Acceptance is required to create an account.</span>
+            </Label>
           </div>
           <Button type="submit" className="h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" disabled={loading}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('register')}

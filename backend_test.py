@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Backend regression test for UnlockTap after MongoDB connection handling + /health diagnostics update.
-Tests the enhanced /health endpoint and verifies no regression in auth and core endpoints.
+UnlockTap Backend API Test Suite
+Tests Terms & Conditions enforcement + MongoDB env standardization + full customer flow
 """
 
 import requests
 import json
 import random
 import string
+from datetime import datetime
 
 # Base URL from environment
 BASE_URL = "https://device-verify-check.preview.emergentagent.com/api"
@@ -16,715 +17,518 @@ def random_string(length=8):
     """Generate random string for unique test data"""
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
-def test_health_endpoint():
-    """Test 1: GET /api/health returns enhanced diagnostics with NO password exposure"""
-    print("\n" + "="*80)
-    print("TEST 1: GET /api/health - Enhanced diagnostics")
-    print("="*80)
-    
-    try:
-        response = requests.get(f"{BASE_URL}/health", timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-        
-        data = response.json()
-        print(f"Response: {json.dumps(data, indent=2)}")
-        
-        # Verify required fields
-        required_fields = ['status', 'db', 'env']
-        for field in required_fields:
-            if field not in data:
-                print(f"❌ FAILED: Missing required field '{field}'")
-                return False
-        
-        # Verify status and db
-        if data['status'] != 'ok':
-            print(f"❌ FAILED: Expected status='ok', got '{data['status']}'")
-            return False
-        
-        if data['db'] != 'connected':
-            print(f"❌ FAILED: Expected db='connected', got '{data['db']}'")
-            return False
-        
-        # Verify env object has required fields
-        env = data.get('env', {})
-        required_env_fields = ['mongoVarUsed', 'hasMongoUrl', 'hasMongoUri', 'connection']
-        for field in required_env_fields:
-            if field not in env:
-                print(f"❌ FAILED: Missing env field '{field}'")
-                return False
-        
-        # Verify mongoVarUsed is correct (should be 'MONGO_URL' based on .env)
-        if env['mongoVarUsed'] != 'MONGO_URL':
-            print(f"⚠️  WARNING: Expected mongoVarUsed='MONGO_URL', got '{env['mongoVarUsed']}'")
-        
-        # Verify hasMongoUrl is true
-        if not env['hasMongoUrl']:
-            print(f"❌ FAILED: Expected hasMongoUrl=true, got {env['hasMongoUrl']}")
-            return False
-        
-        # Verify connection object exists and has required fields
-        connection = env.get('connection', {})
-        if not connection:
-            print(f"❌ FAILED: connection object is empty or missing")
-            return False
-        
-        # Verify connection has host and hasPassword fields
-        if 'host' not in connection:
-            print(f"❌ FAILED: connection missing 'host' field")
-            return False
-        
-        if 'hasPassword' not in connection:
-            print(f"❌ FAILED: connection missing 'hasPassword' field")
-            return False
-        
-        if not isinstance(connection['hasPassword'], bool):
-            print(f"❌ FAILED: hasPassword should be boolean, got {type(connection['hasPassword'])}")
-            return False
-        
-        # CRITICAL: Verify NO raw password is exposed anywhere in the response
-        response_str = json.dumps(data).lower()
-        # Check for common password patterns (this is a basic check)
-        if 'password' in response_str and 'haspassword' not in response_str:
-            print(f"❌ CRITICAL: Possible password exposure detected in response!")
-            return False
-        
-        # Verify usersCount is present and numeric
-        if 'usersCount' not in data:
-            print(f"❌ FAILED: Missing 'usersCount' field")
-            return False
-        
-        if not isinstance(data['usersCount'], int):
-            print(f"❌ FAILED: usersCount should be integer, got {type(data['usersCount'])}")
-            return False
-        
-        print(f"✅ PASSED: /health endpoint returns all required fields")
-        print(f"   - status: {data['status']}")
-        print(f"   - db: {data['db']}")
-        print(f"   - env.mongoVarUsed: {env['mongoVarUsed']}")
-        print(f"   - env.hasMongoUrl: {env['hasMongoUrl']}")
-        print(f"   - env.hasMongoUri: {env.get('hasMongoUri')}")
-        print(f"   - env.connection.host: {connection.get('host')}")
-        print(f"   - env.connection.hasPassword: {connection.get('hasPassword')}")
-        print(f"   - usersCount: {data['usersCount']}")
-        print(f"   - NO password exposed ✓")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
+def print_test(name, passed, details=""):
+    """Print test result"""
+    status = "✅ PASS" if passed else "❌ FAIL"
+    print(f"{status}: {name}")
+    if details:
+        print(f"   {details}")
 
-def test_root_endpoint():
-    """Test 2: GET /api/ returns 200 ok"""
+def test_terms_enforcement():
+    """Test 1: Terms & Conditions MANDATORY enforcement"""
     print("\n" + "="*80)
-    print("TEST 2: GET /api/ - Root endpoint")
+    print("TEST 1: TERMS & CONDITIONS ENFORCEMENT")
     print("="*80)
     
-    try:
-        response = requests.get(f"{BASE_URL}/", timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            return False
-        
-        data = response.json()
-        print(f"Response: {json.dumps(data, indent=2)}")
-        
-        if data.get('status') != 'ok':
-            print(f"❌ FAILED: Expected status='ok'")
-            return False
-        
-        print(f"✅ PASSED: Root endpoint returns 200 ok")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
-
-def test_auth_registration():
-    """Test 3: Auth registration with full profile fields"""
-    print("\n" + "="*80)
-    print("TEST 3: Auth Registration - Full profile fields")
-    print("="*80)
+    test_email = f"termstest_{random_string()}@test.com"
+    test_username = f"termsuser_{random_string()}"
     
-    # Generate unique test data
-    username = f"testuser{random_string(10)}"
-    email = f"test{random_string(10)}@example.com"
-    
+    # Test 1a: Register WITHOUT termsAccepted (missing field)
+    print("\n1a. Register WITHOUT termsAccepted field (should return 400)")
     payload = {
-        "name": "Test User",
+        "name": "Terms Test User",
+        "username": test_username,
+        "country": "United States",
+        "phone": "+1234567890",
+        "email": test_email,
+        "password": "Test@123"
+    }
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    expected_error = "You must agree to the Terms & Conditions and Privacy Policy to create an account."
+    
+    if response.status_code == 400:
+        error_msg = response.json().get('error', '')
+        if error_msg == expected_error:
+            print_test("Register without termsAccepted returns 400 with EXACT error message", True, f"Error: '{error_msg}'")
+        else:
+            print_test("Register without termsAccepted returns 400 but WRONG error message", False, f"Expected: '{expected_error}', Got: '{error_msg}'")
+    else:
+        print_test("Register without termsAccepted", False, f"Expected 400, got {response.status_code}")
+    
+    # Test 1b: Register with termsAccepted=false
+    print("\n1b. Register with termsAccepted=false (should return 400)")
+    payload["termsAccepted"] = False
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    
+    if response.status_code == 400:
+        error_msg = response.json().get('error', '')
+        if error_msg == expected_error:
+            print_test("Register with termsAccepted=false returns 400 with EXACT error message", True, f"Error: '{error_msg}'")
+        else:
+            print_test("Register with termsAccepted=false returns 400 but WRONG error message", False, f"Expected: '{expected_error}', Got: '{error_msg}'")
+    else:
+        print_test("Register with termsAccepted=false", False, f"Expected 400, got {response.status_code}")
+    
+    # Test 1c: Register with termsAccepted=true (should succeed)
+    print("\n1c. Register with termsAccepted=true (should return 200)")
+    payload["termsAccepted"] = True
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    
+    if response.status_code == 200:
+        data = response.json()
+        token = data.get('token')
+        user = data.get('user')
+        
+        # Verify token exists
+        has_token = bool(token)
+        print_test("Registration returns token", has_token, f"Token: {'present' if has_token else 'missing'}")
+        
+        # Verify user object
+        has_user = bool(user)
+        print_test("Registration returns user object", has_user)
+        
+        if user:
+            # Verify termsAccepted field
+            terms_accepted = user.get('termsAccepted')
+            print_test("User has termsAccepted=true", terms_accepted == True, f"termsAccepted: {terms_accepted}")
+            
+            # Verify termsAcceptedAt timestamp
+            terms_accepted_at = user.get('termsAcceptedAt')
+            has_timestamp = bool(terms_accepted_at)
+            print_test("User has termsAcceptedAt timestamp", has_timestamp, f"termsAcceptedAt: {terms_accepted_at}")
+            
+            # Verify NO password field in response
+            has_password = 'password' in user
+            print_test("User object does NOT contain password field", not has_password, f"Password field present: {has_password}")
+            
+            # Verify all profile fields present
+            required_fields = ['name', 'username', 'country', 'phone', 'email', 'credits', 'role']
+            missing_fields = [f for f in required_fields if f not in user]
+            print_test("User object contains all profile fields", len(missing_fields) == 0, 
+                      f"Missing: {missing_fields}" if missing_fields else "All fields present")
+            
+            # Verify credits = 3
+            credits = user.get('credits')
+            print_test("User has 3 free credits", credits == 3, f"Credits: {credits}")
+            
+            # Verify role = user
+            role = user.get('role')
+            print_test("User has role='user'", role == 'user', f"Role: {role}")
+        
+        return token, user
+    else:
+        print_test("Register with termsAccepted=true", False, f"Expected 200, got {response.status_code}: {response.text}")
+        return None, None
+
+def test_registration_validation():
+    """Test 2: Registration validation regression"""
+    print("\n" + "="*80)
+    print("TEST 2: REGISTRATION VALIDATION REGRESSION")
+    print("="*80)
+    
+    base_payload = {
+        "name": "Valid User",
+        "username": f"validuser_{random_string()}",
+        "country": "United States",
+        "phone": "+1234567890",
+        "email": f"valid_{random_string()}@test.com",
+        "password": "Test@123",
+        "termsAccepted": True
+    }
+    
+    # Test 2a: Missing required fields
+    print("\n2a. Missing required fields (should return 400)")
+    required_fields = ['name', 'username', 'country', 'phone', 'email', 'password']
+    for field in required_fields:
+        payload = base_payload.copy()
+        del payload[field]
+        response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+        passed = response.status_code == 400
+        print_test(f"Missing {field} returns 400", passed, f"Status: {response.status_code}")
+    
+    # Test 2b: Invalid username (too short)
+    print("\n2b. Invalid username (too short, should return 400)")
+    payload = base_payload.copy()
+    payload["username"] = "ab"
+    payload["email"] = f"test_{random_string()}@test.com"
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Username too short returns 400", response.status_code == 400, f"Status: {response.status_code}")
+    
+    # Test 2c: Invalid username (contains space)
+    print("\n2c. Invalid username (contains space, should return 400)")
+    payload = base_payload.copy()
+    payload["username"] = "has space"
+    payload["email"] = f"test_{random_string()}@test.com"
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Username with space returns 400", response.status_code == 400, f"Status: {response.status_code}")
+    
+    # Test 2d: Invalid username (too long)
+    print("\n2d. Invalid username (too long, should return 400)")
+    payload = base_payload.copy()
+    payload["username"] = "a" * 21
+    payload["email"] = f"test_{random_string()}@test.com"
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Username too long returns 400", response.status_code == 400, f"Status: {response.status_code}")
+    
+    # Test 2e: Invalid phone
+    print("\n2e. Invalid phone (should return 400)")
+    payload = base_payload.copy()
+    payload["phone"] = "abc"
+    payload["email"] = f"test_{random_string()}@test.com"
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Invalid phone returns 400", response.status_code == 400, f"Status: {response.status_code}")
+    
+    # Test 2f: Password too short
+    print("\n2f. Password too short (should return 400)")
+    payload = base_payload.copy()
+    payload["password"] = "12345"
+    payload["email"] = f"test_{random_string()}@test.com"
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Password < 6 chars returns 400", response.status_code == 400, f"Status: {response.status_code}")
+    
+    # Test 2g: Invalid email
+    print("\n2g. Invalid email (should return 400)")
+    payload = base_payload.copy()
+    payload["email"] = "notanemail"
+    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Invalid email returns 400", response.status_code == 400, f"Status: {response.status_code}")
+    
+    # Test 2h: Duplicate email
+    print("\n2h. Duplicate email (should return 409)")
+    # First registration
+    email = f"duplicate_{random_string()}@test.com"
+    payload = base_payload.copy()
+    payload["email"] = email
+    payload["username"] = f"user1_{random_string()}"
+    response1 = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    
+    # Second registration with same email
+    payload["username"] = f"user2_{random_string()}"
+    response2 = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Duplicate email returns 409", response2.status_code == 409, f"Status: {response2.status_code}")
+    
+    # Test 2i: Duplicate username (case-insensitive)
+    print("\n2i. Duplicate username case-insensitive (should return 409)")
+    username = f"dupuser_{random_string()}"
+    payload = base_payload.copy()
+    payload["username"] = username.lower()
+    payload["email"] = f"user1_{random_string()}@test.com"
+    response1 = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    
+    # Second registration with same username (uppercase)
+    payload["username"] = username.upper()
+    payload["email"] = f"user2_{random_string()}@test.com"
+    response2 = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    print_test("Duplicate username (case-insensitive) returns 409", response2.status_code == 409, f"Status: {response2.status_code}")
+
+def test_full_customer_flow():
+    """Test 3: Full customer flow"""
+    print("\n" + "="*80)
+    print("TEST 3: FULL CUSTOMER FLOW")
+    print("="*80)
+    
+    # Step 1: Register with termsAccepted=true
+    print("\n3.1. Register new customer")
+    email = f"customer_{random_string()}@test.com"
+    username = f"customer_{random_string()}"
+    password = "Customer@123"
+    
+    register_payload = {
+        "name": "Customer Test",
         "username": username,
         "country": "United States",
         "phone": "+1234567890",
         "email": email,
-        "password": "Test@123"
+        "password": password,
+        "termsAccepted": True
     }
     
-    try:
-        response = requests.post(f"{BASE_URL}/auth/register", json=payload, timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return None, None
-        
+    response = requests.post(f"{BASE_URL}/auth/register", json=register_payload)
+    if response.status_code == 200:
         data = response.json()
-        
-        # Verify token and user are present
-        if 'token' not in data or 'user' not in data:
-            print(f"❌ FAILED: Missing token or user in response")
-            return None, None
-        
-        user = data['user']
-        
-        # Verify user has all profile fields
-        required_fields = ['name', 'username', 'country', 'phone', 'email', 'credits', 'role']
-        for field in required_fields:
-            if field not in user:
-                print(f"❌ FAILED: Missing field '{field}' in user object")
-                return None, None
-        
-        # Verify NO password field in response
-        if 'password' in user:
-            print(f"❌ FAILED: Password field should NOT be in response")
-            return None, None
-        
-        # Verify credits = 3 and role = user
-        if user['credits'] != 3:
-            print(f"❌ FAILED: Expected credits=3, got {user['credits']}")
-            return None, None
-        
-        if user['role'] != 'user':
-            print(f"❌ FAILED: Expected role='user', got {user['role']}")
-            return None, None
-        
-        print(f"✅ PASSED: Registration successful")
-        print(f"   - Token received: {data['token'][:20]}...")
-        print(f"   - User fields: {', '.join(user.keys())}")
-        print(f"   - Credits: {user['credits']}")
-        print(f"   - Role: {user['role']}")
-        print(f"   - NO password field ✓")
-        
-        return data['token'], email
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return None, None
-
-def test_duplicate_email(email):
-    """Test 4: Duplicate email returns 409"""
-    print("\n" + "="*80)
-    print("TEST 4: Duplicate Email - Should return 409")
-    print("="*80)
+        token = data.get('token')
+        user = data.get('user')
+        print_test("Customer registration successful", True, f"User ID: {user.get('id')}")
+    else:
+        print_test("Customer registration", False, f"Status: {response.status_code}")
+        return
     
-    # Generate valid username (letters, numbers, underscore only)
-    valid_username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+    # Step 2: Login
+    print("\n3.2. Login with email and password")
+    login_payload = {"email": email, "password": password}
+    response = requests.post(f"{BASE_URL}/auth/login", json=login_payload)
+    if response.status_code == 200:
+        data = response.json()
+        token = data.get('token')
+        print_test("Login successful", True, f"Token received")
+    else:
+        print_test("Login", False, f"Status: {response.status_code}")
+        return
     
-    payload = {
-        "name": "Another User",
-        "username": f"user{valid_username}",
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Step 3: GET /auth/me
+    print("\n3.3. GET /auth/me with Bearer token")
+    response = requests.get(f"{BASE_URL}/auth/me", headers=headers)
+    if response.status_code == 200:
+        user = response.json().get('user')
+        has_password = 'password' in user if user else True
+        print_test("GET /auth/me returns user", True, f"No password field: {not has_password}")
+    else:
+        print_test("GET /auth/me", False, f"Status: {response.status_code}")
+    
+    # Step 4: GET /api/dashboard
+    print("\n3.4. GET /api/dashboard")
+    response = requests.get(f"{BASE_URL}/dashboard", headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        stats = data.get('stats', {})
+        print_test("GET /dashboard returns stats", True, f"Credits: {stats.get('credits')}")
+    else:
+        print_test("GET /dashboard", False, f"Status: {response.status_code}")
+    
+    # Step 5: POST /api/imei/check
+    print("\n3.5. POST /api/imei/check")
+    imei_payload = {"imei": "359876543210987"}
+    response = requests.post(f"{BASE_URL}/imei/check", json=imei_payload, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        search_id = data.get('searchId')
+        print_test("IMEI check successful", True, f"SearchId: {search_id}")
+    else:
+        print_test("IMEI check", False, f"Status: {response.status_code}")
+        return
+    
+    # Step 6: POST /api/unlock
+    print("\n3.6. POST /api/unlock (should deduct 1 credit)")
+    unlock_payload = {"searchId": search_id}
+    response = requests.post(f"{BASE_URL}/unlock", json=unlock_payload, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        credits = data.get('credits')
+        print_test("Unlock successful", True, f"Credits after unlock: {credits} (should be 2)")
+    else:
+        print_test("Unlock", False, f"Status: {response.status_code}")
+    
+    # Step 7: GET /api/plans
+    print("\n3.7. GET /api/plans")
+    response = requests.get(f"{BASE_URL}/plans")
+    if response.status_code == 200:
+        data = response.json()
+        plans = data.get('plans', [])
+        print_test("GET /plans returns 4 plans", len(plans) == 4, f"Plans count: {len(plans)}")
+    else:
+        print_test("GET /plans", False, f"Status: {response.status_code}")
+    
+    # Step 8: GET /api/orders
+    print("\n3.8. GET /api/orders")
+    response = requests.get(f"{BASE_URL}/orders", headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        orders = data.get('items', [])
+        print_test("GET /orders successful", True, f"Orders count: {len(orders)}")
+    else:
+        print_test("GET /orders", False, f"Status: {response.status_code}")
+    
+    # Step 9: Test protected endpoints without token (should return 401)
+    print("\n3.9. Test protected endpoints without token (should return 401)")
+    protected_endpoints = [
+        ("/auth/me", "GET"),
+        ("/dashboard", "GET"),
+        ("/history", "GET"),
+        ("/reports", "GET"),
+        ("/orders", "GET")
+    ]
+    
+    for endpoint, method in protected_endpoints:
+        if method == "GET":
+            response = requests.get(f"{BASE_URL}{endpoint}")
+        else:
+            response = requests.post(f"{BASE_URL}{endpoint}")
+        
+        passed = response.status_code == 401
+        print_test(f"{method} {endpoint} without token returns 401", passed, f"Status: {response.status_code}")
+    
+    # Step 10: Test data isolation (create second user)
+    print("\n3.10. Test data isolation (create second user)")
+    email2 = f"customer2_{random_string()}@test.com"
+    username2 = f"customer2_{random_string()}"
+    password2 = "Customer2@123"
+    
+    register_payload2 = {
+        "name": "Customer 2",
+        "username": username2,
         "country": "Canada",
         "phone": "+1987654321",
-        "email": email,  # Same email as previous registration
-        "password": "Test@456"
+        "email": email2,
+        "password": password2,
+        "termsAccepted": True
     }
     
-    try:
-        response = requests.post(f"{BASE_URL}/auth/register", json=payload, timeout=10)
-        print(f"Status Code: {response.status_code}")
+    response = requests.post(f"{BASE_URL}/auth/register", json=register_payload2)
+    if response.status_code == 200:
+        data = response.json()
+        token2 = data.get('token')
+        print_test("Second user registration successful", True)
         
-        if response.status_code != 409:
-            print(f"❌ FAILED: Expected 409, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-        
-        print(f"✅ PASSED: Duplicate email correctly returns 409")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
+        # Login as second user
+        login_payload2 = {"email": email2, "password": password2}
+        response = requests.post(f"{BASE_URL}/auth/login", json=login_payload2)
+        if response.status_code == 200:
+            token2 = response.json().get('token')
+            headers2 = {"Authorization": f"Bearer {token2}"}
+            
+            # Check second user's history (should be empty)
+            response = requests.get(f"{BASE_URL}/history", headers=headers2)
+            if response.status_code == 200:
+                items = response.json().get('items', [])
+                print_test("Second user has empty history (data isolation)", len(items) == 0, f"History items: {len(items)}")
+            
+            # Check second user's reports (should be empty)
+            response = requests.get(f"{BASE_URL}/reports", headers=headers2)
+            if response.status_code == 200:
+                items = response.json().get('items', [])
+                print_test("Second user has empty reports (data isolation)", len(items) == 0, f"Report items: {len(items)}")
+            
+            # Check second user's orders (should be empty)
+            response = requests.get(f"{BASE_URL}/orders", headers=headers2)
+            if response.status_code == 200:
+                items = response.json().get('items', [])
+                print_test("Second user has empty orders (data isolation)", len(items) == 0, f"Order items: {len(items)}")
 
-def test_duplicate_username():
-    """Test 5: Duplicate username returns 409"""
+def test_health_mongo_diagnostics():
+    """Test 4: Health endpoint and MongoDB diagnostics"""
     print("\n" + "="*80)
-    print("TEST 5: Duplicate Username - Should return 409")
+    print("TEST 4: HEALTH / MONGO DIAGNOSTICS")
     print("="*80)
     
-    username = f"uniqueuser{random_string(10)}"
+    print("\n4.1. GET /api/health")
+    response = requests.get(f"{BASE_URL}/health")
     
-    # First registration
-    payload1 = {
-        "name": "User One",
-        "username": username,
-        "country": "USA",
-        "phone": "+1111111111",
-        "email": f"user1{random_string(10)}@example.com",
-        "password": "Test@123"
-    }
-    
-    try:
-        response1 = requests.post(f"{BASE_URL}/auth/register", json=payload1, timeout=10)
-        if response1.status_code != 200:
-            print(f"❌ FAILED: First registration failed with {response1.status_code}")
-            return False
-        
-        # Second registration with same username (different case)
-        payload2 = {
-            "name": "User Two",
-            "username": username.upper(),  # Same username, different case
-            "country": "Canada",
-            "phone": "+2222222222",
-            "email": f"user2{random_string(10)}@example.com",
-            "password": "Test@456"
-        }
-        
-        response2 = requests.post(f"{BASE_URL}/auth/register", json=payload2, timeout=10)
-        print(f"Status Code: {response2.status_code}")
-        
-        if response2.status_code != 409:
-            print(f"❌ FAILED: Expected 409, got {response2.status_code}")
-            print(f"Response: {response2.text}")
-            return False
-        
-        print(f"✅ PASSED: Duplicate username (case-insensitive) correctly returns 409")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
-
-def test_login(email, password="Test@123"):
-    """Test 6: Login with valid credentials"""
-    print("\n" + "="*80)
-    print("TEST 6: Login - Valid credentials")
-    print("="*80)
-    
-    payload = {
-        "email": email,
-        "password": password
-    }
-    
-    try:
-        response = requests.post(f"{BASE_URL}/auth/login", json=payload, timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-        
+    if response.status_code == 200:
         data = response.json()
         
-        if 'token' not in data or 'user' not in data:
-            print(f"❌ FAILED: Missing token or user in response")
-            return None
+        # Check status
+        status = data.get('status')
+        print_test("Health status is 'ok'", status == 'ok', f"Status: {status}")
         
-        print(f"✅ PASSED: Login successful")
-        print(f"   - Token received: {data['token'][:20]}...")
+        # Check db connection
+        db = data.get('db')
+        print_test("DB status is 'connected'", db == 'connected', f"DB: {db}")
         
-        return data['token']
+        # Check env object
+        env = data.get('env', {})
+        print_test("Response contains env object", bool(env))
         
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return None
-
-def test_login_wrong_password(email):
-    """Test 7: Login with wrong password returns 401"""
-    print("\n" + "="*80)
-    print("TEST 7: Login - Wrong password should return 401")
-    print("="*80)
-    
-    payload = {
-        "email": email,
-        "password": "WrongPassword123"
-    }
-    
-    try:
-        response = requests.post(f"{BASE_URL}/auth/login", json=payload, timeout=10)
-        print(f"Status Code: {response.status_code}")
+        if env:
+            # Check mongoVarUsed
+            mongo_var = env.get('mongoVarUsed')
+            print_test("env.mongoVarUsed present", mongo_var is not None, f"mongoVarUsed: {mongo_var}")
+            
+            # Check hasMongoUrl
+            has_mongo_url = env.get('hasMongoUrl')
+            print_test("env.hasMongoUrl is boolean", isinstance(has_mongo_url, bool), f"hasMongoUrl: {has_mongo_url}")
+            
+            # Check hasMongoUri
+            has_mongo_uri = env.get('hasMongoUri')
+            print_test("env.hasMongoUri is boolean", isinstance(has_mongo_uri, bool), f"hasMongoUri: {has_mongo_uri}")
+            
+            # Check hasMongodbUri
+            has_mongodb_uri = env.get('hasMongodbUri')
+            print_test("env.hasMongodbUri is boolean", isinstance(has_mongodb_uri, bool), f"hasMongodbUri: {has_mongodb_uri}")
+            
+            # Check connection object
+            connection = env.get('connection', {})
+            print_test("env.connection object present", bool(connection))
+            
+            if connection:
+                # Check host
+                host = connection.get('host')
+                print_test("env.connection.host present", host is not None, f"host: {host}")
+                
+                # Check hasPassword
+                has_password = connection.get('hasPassword')
+                print_test("env.connection.hasPassword is boolean", isinstance(has_password, bool), f"hasPassword: {has_password}")
         
-        if response.status_code != 401:
-            print(f"❌ FAILED: Expected 401, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
+        # Check usersCount
+        users_count = data.get('usersCount')
+        print_test("usersCount is numeric", isinstance(users_count, (int, float)), f"usersCount: {users_count}")
         
-        print(f"✅ PASSED: Wrong password correctly returns 401")
-        return True
+        # CRITICAL: Check NO raw password in response
+        response_text = json.dumps(data)
+        # Common password patterns to check
+        suspicious_patterns = ['password:', 'pwd:', 'pass:']
+        has_password_leak = any(pattern in response_text.lower() for pattern in suspicious_patterns)
         
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
-
-def test_auth_me_with_token(token):
-    """Test 8: GET /auth/me with Bearer token"""
-    print("\n" + "="*80)
-    print("TEST 8: GET /auth/me - With Bearer token")
-    print("="*80)
-    
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
-    
-    try:
-        response = requests.get(f"{BASE_URL}/auth/me", headers=headers, timeout=10)
-        print(f"Status Code: {response.status_code}")
+        # Also check if there's any string that looks like a MongoDB password (contains @ and special chars)
+        # This is a heuristic check - we're looking for connection strings with passwords
+        import re
+        # Pattern for mongodb://username:password@host
+        password_pattern = r'mongodb(?:\+srv)?://[^:]+:([^@]+)@'
+        password_match = re.search(password_pattern, response_text)
         
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
+        print_test("NO raw MongoDB password in response", not has_password_leak and not password_match, 
+                  "CRITICAL: Password leak detected!" if (has_password_leak or password_match) else "Password properly masked")
         
-        data = response.json()
-        
-        if 'user' not in data:
-            print(f"❌ FAILED: Missing user in response")
-            return False
-        
-        user = data['user']
-        
-        # Verify NO password field
-        if 'password' in user:
-            print(f"❌ FAILED: Password field should NOT be in response")
-            return False
-        
-        print(f"✅ PASSED: /auth/me returns user data")
-        print(f"   - User fields: {', '.join(user.keys())}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
-
-def test_auth_me_without_token():
-    """Test 9: GET /auth/me without token returns 401"""
-    print("\n" + "="*80)
-    print("TEST 9: GET /auth/me - Without token should return 401")
-    print("="*80)
-    
-    try:
-        response = requests.get(f"{BASE_URL}/auth/me", timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 401:
-            print(f"❌ FAILED: Expected 401, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-        
-        print(f"✅ PASSED: /auth/me without token correctly returns 401")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
+    else:
+        print_test("GET /health", False, f"Status: {response.status_code}")
 
 def test_admin_login():
-    """Test 10: Admin login with admin@unlocktap.com/Admin@123"""
+    """Test 5: Admin login"""
     print("\n" + "="*80)
-    print("TEST 10: Admin Login - admin@unlocktap.com/Admin@123")
+    print("TEST 5: ADMIN LOGIN")
     print("="*80)
     
-    payload = {
+    print("\n5.1. Admin login (admin@unlocktap.com / Admin@123)")
+    login_payload = {
         "email": "admin@unlocktap.com",
         "password": "Admin@123"
     }
     
-    try:
-        response = requests.post(f"{BASE_URL}/auth/login", json=payload, timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-        
+    response = requests.post(f"{BASE_URL}/auth/login", json=login_payload)
+    
+    if response.status_code == 200:
         data = response.json()
-        
-        if 'user' not in data:
-            print(f"❌ FAILED: Missing user in response")
-            return False
-        
-        user = data['user']
-        
-        if user.get('role') != 'admin':
-            print(f"❌ FAILED: Expected role='admin', got '{user.get('role')}'")
-            return False
-        
-        print(f"✅ PASSED: Admin login successful")
-        print(f"   - Role: {user['role']}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
-
-def test_plans_endpoint():
-    """Test 11: GET /api/plans returns 4 plans"""
-    print("\n" + "="*80)
-    print("TEST 11: GET /api/plans - Should return 4 plans")
-    print("="*80)
-    
-    try:
-        response = requests.get(f"{BASE_URL}/plans", timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-        
-        data = response.json()
-        
-        if 'plans' not in data:
-            print(f"❌ FAILED: Missing plans in response")
-            return False
-        
-        plans = data['plans']
-        
-        if len(plans) != 4:
-            print(f"❌ FAILED: Expected 4 plans, got {len(plans)}")
-            return False
-        
-        # Verify plan names
-        expected_ids = ['single', 'starter', 'technician', 'business']
-        plan_ids = [p.get('id') for p in plans]
-        
-        for expected_id in expected_ids:
-            if expected_id not in plan_ids:
-                print(f"❌ FAILED: Missing plan '{expected_id}'")
-                return False
-        
-        print(f"✅ PASSED: /plans returns 4 plans")
-        print(f"   - Plan IDs: {', '.join(plan_ids)}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
-
-def test_imei_check():
-    """Test 12: POST /api/imei/check with valid IMEI"""
-    print("\n" + "="*80)
-    print("TEST 12: POST /api/imei/check - Valid IMEI")
-    print("="*80)
-    
-    payload = {
-        "imei": "359876543210987"
-    }
-    
-    try:
-        response = requests.post(f"{BASE_URL}/imei/check", json=payload, timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-        
-        data = response.json()
-        
-        # Verify required fields
-        required_fields = ['searchId', 'type', 'query', 'free', 'locked']
-        for field in required_fields:
-            if field not in data:
-                print(f"❌ FAILED: Missing field '{field}'")
-                return None
-        
-        # Verify free preview has required fields
-        free = data['free']
-        required_free_fields = ['Brand', 'Model', 'Model Number', 'Capacity', 'Color']
-        for field in required_free_fields:
-            if field not in free:
-                print(f"❌ FAILED: Missing free preview field '{field}'")
-                return None
-        
-        # Verify locked is true
-        if not data['locked']:
-            print(f"❌ FAILED: Expected locked=true")
-            return None
-        
-        print(f"✅ PASSED: IMEI check successful")
-        print(f"   - SearchId: {data['searchId']}")
-        print(f"   - Brand: {free['Brand']}")
-        print(f"   - Model: {free['Model']}")
-        print(f"   - Locked: {data['locked']}")
-        
-        return data['searchId']
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return None
-
-def test_unlock_with_credit_deduction(token, search_id):
-    """Test 13: POST /api/unlock - Should deduct 1 credit"""
-    print("\n" + "="*80)
-    print("TEST 13: POST /api/unlock - Credit deduction")
-    print("="*80)
-    
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
-    
-    payload = {
-        "searchId": search_id
-    }
-    
-    try:
-        response = requests.post(f"{BASE_URL}/unlock", json=payload, headers=headers, timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-        
-        data = response.json()
-        
-        # Verify required fields
-        if 'free' not in data or 'premium' not in data or 'credits' not in data:
-            print(f"❌ FAILED: Missing required fields in response")
-            return False
-        
-        # Verify credits were deducted (should be 2 now, started with 3)
-        if data['credits'] != 2:
-            print(f"⚠️  WARNING: Expected credits=2 after unlock, got {data['credits']}")
-        
-        print(f"✅ PASSED: Unlock successful")
-        print(f"   - Credits after unlock: {data['credits']}")
-        print(f"   - Premium fields received: {len(data['premium'])} fields")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
-
-def test_dashboard_endpoint(token):
-    """Test 14: GET /api/dashboard with token"""
-    print("\n" + "="*80)
-    print("TEST 14: GET /api/dashboard - With Bearer token")
-    print("="*80)
-    
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
-    
-    try:
-        response = requests.get(f"{BASE_URL}/dashboard", headers=headers, timeout=10)
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ FAILED: Expected 200, got {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-        
-        data = response.json()
-        
-        # Verify required fields
-        if 'stats' not in data or 'recent' not in data:
-            print(f"❌ FAILED: Missing required fields in response")
-            return False
-        
-        stats = data['stats']
-        required_stats = ['credits', 'searches', 'reports', 'orders']
-        for field in required_stats:
-            if field not in stats:
-                print(f"❌ FAILED: Missing stats field '{field}'")
-                return False
-        
-        print(f"✅ PASSED: Dashboard endpoint working")
-        print(f"   - Credits: {stats['credits']}")
-        print(f"   - Searches: {stats['searches']}")
-        print(f"   - Reports: {stats['reports']}")
-        print(f"   - Orders: {stats['orders']}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ FAILED: Exception occurred: {str(e)}")
-        return False
+        user = data.get('user', {})
+        role = user.get('role')
+        print_test("Admin login successful with role='admin'", role == 'admin', f"Role: {role}")
+    else:
+        print_test("Admin login", False, f"Status: {response.status_code}")
 
 def main():
-    """Run all backend tests"""
+    """Run all tests"""
     print("\n" + "="*80)
-    print("UNLOCKTAP BACKEND REGRESSION TEST")
-    print("MongoDB Connection Handling + /health Diagnostics Update")
+    print("UNLOCKTAP BACKEND API TEST SUITE")
+    print("Terms & Conditions Enforcement + MongoDB Env Standardization")
     print("="*80)
+    print(f"Base URL: {BASE_URL}")
+    print(f"Test started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    results = []
-    
-    # Test 1: Health endpoint
-    results.append(("Health endpoint", test_health_endpoint()))
-    
-    # Test 2: Root endpoint
-    results.append(("Root endpoint", test_root_endpoint()))
-    
-    # Test 3: Registration
-    token, email = test_auth_registration()
-    results.append(("Registration", token is not None))
-    
-    if token and email:
-        # Test 4: Duplicate email
-        results.append(("Duplicate email", test_duplicate_email(email)))
+    try:
+        # Test 1: Terms enforcement (PRIMARY)
+        test_terms_enforcement()
         
-        # Test 5: Duplicate username
-        results.append(("Duplicate username", test_duplicate_username()))
+        # Test 2: Registration validation regression
+        test_registration_validation()
         
-        # Test 6: Login
-        login_token = test_login(email)
-        results.append(("Login", login_token is not None))
+        # Test 3: Full customer flow
+        test_full_customer_flow()
         
-        # Test 7: Wrong password
-        results.append(("Wrong password", test_login_wrong_password(email)))
+        # Test 4: Health / Mongo diagnostics
+        test_health_mongo_diagnostics()
         
-        if login_token:
-            # Test 8: /auth/me with token
-            results.append(("Auth me with token", test_auth_me_with_token(login_token)))
+        # Test 5: Admin login
+        test_admin_login()
         
-        # Test 9: /auth/me without token
-        results.append(("Auth me without token", test_auth_me_without_token()))
-    
-    # Test 10: Admin login
-    results.append(("Admin login", test_admin_login()))
-    
-    # Test 11: Plans endpoint
-    results.append(("Plans endpoint", test_plans_endpoint()))
-    
-    # Test 12: IMEI check
-    search_id = test_imei_check()
-    results.append(("IMEI check", search_id is not None))
-    
-    if token and search_id:
-        # Test 13: Unlock with credit deduction
-        results.append(("Unlock credit deduction", test_unlock_with_credit_deduction(token, search_id)))
+        print("\n" + "="*80)
+        print("ALL TESTS COMPLETED")
+        print("="*80)
+        print(f"Test completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
-        # Test 14: Dashboard
-        results.append(("Dashboard endpoint", test_dashboard_endpoint(token)))
-    
-    # Print summary
-    print("\n" + "="*80)
-    print("TEST SUMMARY")
-    print("="*80)
-    
-    passed = sum(1 for _, result in results if result)
-    total = len(results)
-    
-    for test_name, result in results:
-        status = "✅ PASS" if result else "❌ FAIL"
-        print(f"{status}: {test_name}")
-    
-    print("\n" + "="*80)
-    print(f"TOTAL: {passed}/{total} tests passed ({passed*100//total}%)")
-    print("="*80)
-    
-    return passed == total
+    except Exception as e:
+        print(f"\n❌ TEST SUITE ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    success = main()
-    exit(0 if success else 1)
+    main()

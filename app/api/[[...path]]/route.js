@@ -10,14 +10,16 @@ let client
 let db
 let seeded = false
 
-// Accept either MONGO_URL (preferred) or MONGO_URI (fallback) so the app works
-// regardless of which name the deployment platform injects the connection string as.
+// Canonical connection-string variable is MONGO_URL. We also accept MONGO_URI and
+// MONGODB_URI as fallbacks so the app connects regardless of which name the hosting
+// platform injects. Credentials are NEVER logged or returned anywhere.
 function getMongoUri() {
-  return process.env.MONGO_URL || process.env.MONGO_URI || ''
+  return process.env.MONGO_URL || process.env.MONGO_URI || process.env.MONGODB_URI || ''
 }
 function getMongoVarUsed() {
   if (process.env.MONGO_URL) return 'MONGO_URL'
   if (process.env.MONGO_URI) return 'MONGO_URI'
+  if (process.env.MONGODB_URI) return 'MONGODB_URI'
   return null
 }
 // Safely describe the connection string WITHOUT leaking the password.
@@ -337,6 +339,7 @@ async function handleRoute(request, { params }) {
         mongoVarUsed: getMongoVarUsed(),
         hasMongoUrl: !!process.env.MONGO_URL,
         hasMongoUri: !!process.env.MONGO_URI,
+        hasMongodbUri: !!process.env.MONGODB_URI,
         hasDbName: !!process.env.DB_NAME,
         dbName: process.env.DB_NAME || null,
         nodeEnv: process.env.NODE_ENV || null,
@@ -377,10 +380,14 @@ async function handleRoute(request, { params }) {
     // ---------------- AUTH ----------------
     if (route === '/auth/register' && method === 'POST') {
       const body = await request.json()
-      const { name, username, country, phone, email, password } = body
+      const { name, username, country, phone, email, password, termsAccepted } = body
       // Required field validation
       if (!name || !username || !country || !phone || !email || !password) {
         return json({ error: 'All fields are required' }, 400)
+      }
+      // Terms & Conditions acceptance is MANDATORY (enforced server-side; cannot be bypassed via direct API call)
+      if (termsAccepted !== true) {
+        return json({ error: 'You must agree to the Terms & Conditions and Privacy Policy to create an account.' }, 400)
       }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'Invalid email address' }, 400)
       if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
@@ -407,6 +414,8 @@ async function handleRoute(request, { params }) {
         credits: 3, // free welcome credits
         language: body.language || 'en',
         banned: false,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
         createdAt: new Date(),
       }
       await db.collection('users').insertOne(user)

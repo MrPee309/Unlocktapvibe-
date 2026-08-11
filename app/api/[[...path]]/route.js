@@ -1,7 +1,9 @@
+
 import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
+import nodemailer from 'nodemailer'
 
 // ------------------------------------------------------------------
 // MongoDB connection (singleton)
@@ -215,8 +217,88 @@ async function getUser(request, db) {
 }
 function cleanUser(u) {
   if (!u) return null
-  const { _id, password, ...rest } = u
+  const { _id, password, verificationTokenHash, ...rest } = u
   return rest
+}
+
+// ------------------------------------------------------------------
+// Email verification (real email, via SMTP - Node's crypto for tokens)
+// ------------------------------------------------------------------
+const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+const RESEND_COOLDOWN_MS = 60 * 1000 // 60 seconds between resend requests
+
+function generateVerificationToken() {
+  // 32 random bytes = cryptographically secure, unique, unguessable
+  return crypto.randomBytes(32).toString('hex')
+}
+function hashVerificationToken(token) {
+  // Only the hash is ever stored - the raw token exists only in the emailed link
+  return crypto.createHash('sha256').update(token).digest('hex')
+}
+
+let mailTransport
+let mailTransportError = null
+function getMailTransport() {
+  if (mailTransport || mailTransportError) return mailTransport
+  const host = process.env.SMTP_HOST
+  const port = Number(process.env.SMTP_PORT || 587)
+  const user = process.env.SMTP_USER
+  const pass = process.env.SMTP_PASS
+  if (!host || !user || !pass) {
+    mailTransportError = new Error(
+      'Email is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS in the environment variables.'
+    )
+    return null
+  }
+  mailTransport = nodemailer.createTransport({
+    host,
+    port,
+    secure: String(process.env.SMTP_SECURE || (port === 465 ? 'true' : 'false')) === 'true',
+    auth: { user, pass },
+  })
+  return mailTransport
+}
+
+// Never leak SMTP credentials if the mail server error message happens to include them
+function sanitizeMailError(err) {
+  let m = String(err && err.message ? err.message : err)
+  const pass = process.env.SMTP_PASS
+  if (pass) m = m.split(pass).join('<redacted>')
+  return m
+}
+
+function getAppUrl(request) {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '')
+  try {
+    const origin = new URL(request.url).origin
+    return origin
+  } catch {
+    return ''
+  }
+}
+
+async function sendVerificationEmail({ to, name, token, request }) {
+  const transport = getMailTransport()
+  if (!transport) throw mailTransportError
+  const verifyUrl = `${getAppUrl(request)}/?verify=${token}`
+  const from = process.env.EMAIL_FROM || 'UnlockTap <no-reply@unlocktap.com>'
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px;">
+      <h2 style="color:#2563eb;margin-bottom:8px;">Verify your email</h2>
+      <p>Hi ${name ? name.replace(/[<>]/g, '') : ''},</p>
+      <p>Thanks for creating an UnlockTap account. Please confirm this is your email address by clicking the button below. This link expires in 24 hours.</p>
+      <p style="text-align:center;margin:32px 0;">
+        <a href="${verifyUrl}" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:bold;display:inline-block;">Verify Email</a>
+      </p>
+      <p style="font-size:12px;color:#64748b;">If the button doesn't work, copy and paste this link into your browser:<br/>${verifyUrl}</p>
+      <p style="font-size:12px;color:#94a3b8;">If you didn't create this account, you can safely ignore this email.</p>
+    </div>`
+  const text = `Verify your UnlockTap account by visiting: ${verifyUrl}\nThis link expires in 24 hours.`
+  try {
+    await transport.sendMail({ from, to, subject: 'Verify your UnlockTap account', html, text })
+  } catch (err) {
+    throw new Error(sanitizeMailError(err))
+  }
 }
 
 // ------------------------------------------------------------------
@@ -378,6 +460,7 @@ async function seedData(db) {
       credits: 9999,
       language: 'en',
       banned: false,
+      emailVerified: true, // seeded account - no verification email needed
       createdAt: new Date(),
     })
   }
@@ -482,7 +565,7 @@ async function handleRoute(request, { params }) {
         return json({ status: 'error', connection: 'failed', failureStage: 'missing_env', message: 'No MongoDB connection string found in MONGO_URL / MONGO_URI / MONGODB_URI.', ...safe }, 500)
       }
 
-      // Use the sanitized value (trim + strip wrapping quotes) — the same value the app now uses.
+      // Use the sanitized value (trim + strip wrapping quotes) â the same value the app now uses.
       const testUri = sanitizeUriValue(rawEnv)
       let stage = 'uri_parse'
       let testClient = null
@@ -549,6 +632,9 @@ async function handleRoute(request, { params }) {
       const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const usernameExists = await db.collection('users').findOne({ username: { $regex: `^${escaped}$`, $options: 'i' } })
       if (usernameExists) return json({ error: 'This username is already taken' }, 409)
+      // Account is created unverified. NO session/token is issued here - the client
+      // stays logged out until the real verification email is confirmed.
+      const verificationToken = generateVerificationToken()
       const user = {
         id: uuidv4(),
         name,
@@ -563,11 +649,29 @@ async function handleRoute(request, { params }) {
         banned: false,
         termsAccepted: true,
         termsAcceptedAt: new Date(),
+        emailVerified: false,
+        verificationTokenHash: hashVerificationToken(verificationToken),
+        verificationTokenExpiresAt: new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS),
         createdAt: new Date(),
       }
       await db.collection('users').insertOne(user)
-      const token = signToken({ sub: user.id, role: user.role })
-      return json({ token, user: cleanUser(user) })
+
+      try {
+        await sendVerificationEmail({ to: user.email, name: user.name, token: verificationToken, request })
+        await db.collection('users').updateOne({ id: user.id }, { $set: { verificationLastSentAt: new Date() } })
+      } catch (err) {
+        // Never claim an email was sent when it wasn't - roll back the account instead
+        // of leaving an unverifiable, unusable user record behind.
+        await db.collection('users').deleteOne({ id: user.id })
+        console.error('Verification email send failed:', err.message)
+        return json({ error: 'We could not send the verification email right now. Please try registering again shortly.' }, 502)
+      }
+
+      // No token, no user session - client remains logged out.
+      return json({
+        message: 'Account created. Please check your email to verify your account before logging in.',
+        email: user.email,
+      }, 201)
     }
 
     if (route === '/auth/login' && method === 'POST') {
@@ -576,8 +680,63 @@ async function handleRoute(request, { params }) {
       const user = await db.collection('users').findOne({ email: (email || '').toLowerCase() })
       if (!user || !verifyPassword(password, user.password)) return json({ error: 'Invalid email or password' }, 401)
       if (user.banned) return json({ error: 'This account has been suspended' }, 403)
+      // Only block accounts explicitly marked unverified - accounts created before this
+      // feature existed have no `emailVerified` field and continue to log in normally.
+      if (user.emailVerified === false) {
+        return json({ error: 'Please verify your email before logging in.', code: 'EMAIL_NOT_VERIFIED' }, 403)
+      }
       const token = signToken({ sub: user.id, role: user.role })
       return json({ token, user: cleanUser(user) })
+    }
+
+    if (route === '/auth/verify-email' && method === 'POST') {
+      const { token } = await request.json()
+      if (!token || typeof token !== 'string') return json({ error: 'Verification token is required' }, 400)
+      const tokenHash = hashVerificationToken(token)
+      const user = await db.collection('users').findOne({ verificationTokenHash: tokenHash })
+      if (!user || !user.verificationTokenExpiresAt || new Date(user.verificationTokenExpiresAt) < new Date()) {
+        return json({ error: 'This verification link is invalid or has expired. Please request a new one.' }, 400)
+      }
+      // Token is invalidated (one-time-use) whether or not the account was already verified
+      await db.collection('users').updateOne(
+        { id: user.id },
+        { $set: { emailVerified: true }, $unset: { verificationTokenHash: '', verificationTokenExpiresAt: '' } }
+      )
+      return json({ message: 'Your email has been verified. You can now log in.' })
+    }
+
+    if (route === '/auth/resend-verification' && method === 'POST') {
+      const { email } = await request.json()
+      if (!email) return json({ error: 'Email is required' }, 400)
+      const user = await db.collection('users').findOne({ email: (email || '').toLowerCase() })
+      if (!user) return json({ error: 'No account found with this email address' }, 404)
+      if (user.emailVerified !== false) {
+        return json({ message: 'This account is already verified. You can log in.' })
+      }
+      if (user.verificationLastSentAt) {
+        const elapsed = Date.now() - new Date(user.verificationLastSentAt).getTime()
+        if (elapsed < RESEND_COOLDOWN_MS) {
+          const retryAfterSeconds = Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 1000)
+          return json({ error: `Please wait ${retryAfterSeconds}s before requesting another verification email.`, retryAfterSeconds }, 429)
+        }
+      }
+      const verificationToken = generateVerificationToken()
+      await db.collection('users').updateOne(
+        { id: user.id },
+        { $set: {
+          verificationTokenHash: hashVerificationToken(verificationToken),
+          verificationTokenExpiresAt: new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS),
+        } }
+      )
+      try {
+        await sendVerificationEmail({ to: user.email, name: user.name, token: verificationToken, request })
+      } catch (err) {
+        // Do not set verificationLastSentAt on failure, so the user can retry immediately
+        console.error('Resend verification email failed:', err.message)
+        return json({ error: 'We could not send the verification email right now. Please try again shortly.' }, 502)
+      }
+      await db.collection('users').updateOne({ id: user.id }, { $set: { verificationLastSentAt: new Date() } })
+      return json({ message: 'Verification email sent. Please check your inbox.' })
     }
 
     if (route === '/auth/forgot-password' && method === 'POST') {

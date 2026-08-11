@@ -48,7 +48,7 @@ const T = {
     dashboard: 'Dashboard', profile: 'Profile', admin: 'Admin', credits: 'Credits',
     hero_badge: 'Trusted Apple Device Verification',
     hero_title: 'Check any Apple device in seconds',
-    hero_sub: 'Instant IMEI & Serial number lookups. Verify iCloud lock, warranty, carrier, blacklist status and more — powered by a premium verification engine.',
+    hero_sub: 'Instant IMEI & Serial number lookups. Verify iCloud lock, warranty, carrier, blacklist status and more â powered by a premium verification engine.',
     hero_cta1: 'Check IMEI', hero_cta2: 'Check Serial Number',
     features_title: 'Everything you need to verify a device',
     features_sub: 'Professional-grade checks trusted by technicians and resellers worldwide.',
@@ -68,53 +68,53 @@ const T = {
     language: 'Language',
   },
   fr: {
-    nav_home: 'Accueil', nav_imei: 'Vérif IMEI', nav_serial: 'Vérif Série', nav_pricing: 'Tarifs',
-    nav_faq: 'FAQ', nav_contact: 'Contact', login: 'Connexion', register: 'S’inscrire', logout: 'Déconnexion',
-    dashboard: 'Tableau de bord', profile: 'Profil', admin: 'Admin', credits: 'Crédits',
-    hero_badge: 'Vérification de confiance des appareils Apple',
-    hero_title: 'Vérifiez tout appareil Apple en quelques secondes',
-    hero_sub: 'Recherche instantanée IMEI & numéro de série. Vérifiez le verrou iCloud, la garantie, l’opérateur, la liste noire et plus encore.',
-    hero_cta1: 'Vérifier IMEI', hero_cta2: 'Vérifier numéro de série',
-    features_title: 'Tout ce qu’il faut pour vérifier un appareil',
-    features_sub: 'Des vérifications professionnelles utilisées par les techniciens et revendeurs du monde entier.',
-    pricing_title: 'Tarifs simples et transparents', pricing_sub: 'Payez seulement ce que vous utilisez. Les crédits n’expirent jamais.',
-    testi_title: 'Adoré par les revendeurs et réparateurs',
-    faq_title: 'Questions fréquentes',
-    footer_tag: 'La vérification Apple premium, simplifiée.',
-    get_started: 'Commencer', buy_credits: 'Acheter des crédits', most_popular: 'Le plus populaire',
-    free_preview: 'Aperçu gratuit', premium_report: 'Rapport premium', unlock_report: 'Débloquer le rapport (1 crédit)',
-    check_now: 'Vérifier', enter_imei: 'Entrez l’IMEI à 15 chiffres', enter_serial: 'Entrez le numéro de série Apple',
-    email: 'Email', password: 'Mot de passe', name: 'Nom complet', forgot: 'Mot de passe oublié ?',
-    no_account: 'Pas de compte ?', have_account: 'Déjà un compte ?',
-    search_history: 'Historique', orders: 'Commandes', reports: 'Rapports', overview: 'Aperçu',
-    welcome_back: 'Bon retour', signin_sub: 'Connectez-vous pour accéder à votre tableau de bord',
-    create_account: 'Créez votre compte', register_sub: 'Obtenez 3 crédits gratuits à l’inscription',
-    send_message: 'Envoyer', contact_title: 'Contactez-nous', contact_sub: 'Nous répondons sous 24 heures.',
+    nav_home: 'Accueil', nav_imei: 'VÃ©rif IMEI', nav_serial: 'VÃ©rif SÃ©rie', nav_pricing: 'Tarifs',
+    nav_faq: 'FAQ', nav_contact: 'Contact', login: 'Connexion', register: 'Sâinscrire', logout: 'DÃ©connexion',
+    dashboard: 'Tableau de bord', profile: 'Profil', admin: 'Admin', credits: 'CrÃ©dits',
+    hero_badge: 'VÃ©rification de confiance des appareils Apple',
+    hero_title: 'VÃ©rifiez tout appareil Apple en quelques secondes',
+    hero_sub: 'Recherche instantanÃ©e IMEI & numÃ©ro de sÃ©rie. VÃ©rifiez le verrou iCloud, la garantie, lâopÃ©rateur, la liste noire et plus encore.',
+    hero_cta1: 'VÃ©rifier IMEI', hero_cta2: 'VÃ©rifier numÃ©ro de sÃ©rie',
+    features_title: 'Tout ce quâil faut pour vÃ©rifier un appareil',
+    features_sub: 'Des vÃ©rifications professionnelles utilisÃ©es par les techniciens et revendeurs du monde entier.',
+    pricing_title: 'Tarifs simples et transparents', pricing_sub: 'Payez seulement ce que vous utilisez. Les crÃ©dits nâexpirent jamais.',
+    testi_title: 'AdorÃ© par les revendeurs et rÃ©parateurs',
+    faq_title: 'Questions frÃ©quentes',
+    footer_tag: 'La vÃ©rification Apple premium, simplifiÃ©e.',
+    get_started: 'Commencer', buy_credits: 'Acheter des crÃ©dits', most_popular: 'Le plus populaire',
+    free_preview: 'AperÃ§u gratuit', premium_report: 'Rapport premium', unlock_report: 'DÃ©bloquer le rapport (1 crÃ©dit)',
+    check_now: 'VÃ©rifier', enter_imei: 'Entrez lâIMEI Ã  15 chiffres', enter_serial: 'Entrez le numÃ©ro de sÃ©rie Apple',
+    email: 'Email', password: 'Mot de passe', name: 'Nom complet', forgot: 'Mot de passe oubliÃ© ?',
+    no_account: 'Pas de compte ?', have_account: 'DÃ©jÃ  un compte ?',
+    search_history: 'Historique', orders: 'Commandes', reports: 'Rapports', overview: 'AperÃ§u',
+    welcome_back: 'Bon retour', signin_sub: 'Connectez-vous pour accÃ©der Ã  votre tableau de bord',
+    create_account: 'CrÃ©ez votre compte', register_sub: 'Obtenez 3 crÃ©dits gratuits Ã  lâinscription',
+    send_message: 'Envoyer', contact_title: 'Contactez-nous', contact_sub: 'Nous rÃ©pondons sous 24 heures.',
     language: 'Langue',
   },
   ht: {
-    nav_home: 'Akèy', nav_imei: 'Tcheke IMEI', nav_serial: 'Tcheke Seri', nav_pricing: 'Pri',
+    nav_home: 'AkÃ¨y', nav_imei: 'Tcheke IMEI', nav_serial: 'Tcheke Seri', nav_pricing: 'Pri',
     nav_faq: 'FAQ', nav_contact: 'Kontak', login: 'Konekte', register: 'Enskri', logout: 'Dekonekte',
     dashboard: 'Tablo', profile: 'Pwofil', admin: 'Admin', credits: 'Kredi',
-    hero_badge: 'Verifikasyon aparèy Apple ou ka fè konfyans',
-    hero_title: 'Tcheke nenpòt aparèy Apple nan segond',
-    hero_sub: 'Rechèch IMEI & nimewo seri touswit. Verifye vèwou iCloud, garanti, konpayi, lis nwa ak plis ankò.',
+    hero_badge: 'Verifikasyon aparÃ¨y Apple ou ka fÃ¨ konfyans',
+    hero_title: 'Tcheke nenpÃ²t aparÃ¨y Apple nan segond',
+    hero_sub: 'RechÃ¨ch IMEI & nimewo seri touswit. Verifye vÃ¨wou iCloud, garanti, konpayi, lis nwa ak plis ankÃ².',
     hero_cta1: 'Tcheke IMEI', hero_cta2: 'Tcheke nimewo seri',
-    features_title: 'Tout sa ou bezwen pou verifye yon aparèy',
-    features_sub: 'Verifikasyon pwofesyonèl teknisyen ak revandè atravè mond lan fè konfyans.',
-    pricing_title: 'Pri senp e klè', pricing_sub: 'Peye sèlman sa ou itilize. Kredi pa janm ekspire.',
-    testi_title: 'Revandè ak boutik reparasyon renmen li',
+    features_title: 'Tout sa ou bezwen pou verifye yon aparÃ¨y',
+    features_sub: 'Verifikasyon pwofesyonÃ¨l teknisyen ak revandÃ¨ atravÃ¨ mond lan fÃ¨ konfyans.',
+    pricing_title: 'Pri senp e klÃ¨', pricing_sub: 'Peye sÃ¨lman sa ou itilize. Kredi pa janm ekspire.',
+    testi_title: 'RevandÃ¨ ak boutik reparasyon renmen li',
     faq_title: 'Kesyon yo poze souvan',
     footer_tag: 'Verifikasyon Apple premium, senp.',
-    get_started: 'Kòmanse', buy_credits: 'Achte Kredi', most_popular: 'Pi Popilè',
-    free_preview: 'Apèsi Gratis', premium_report: 'Rapò Premium', unlock_report: 'Debloke Rapò a (1 kredi)',
+    get_started: 'KÃ²manse', buy_credits: 'Achte Kredi', most_popular: 'Pi PopilÃ¨',
+    free_preview: 'ApÃ¨si Gratis', premium_report: 'RapÃ² Premium', unlock_report: 'Debloke RapÃ² a (1 kredi)',
     check_now: 'Tcheke Kounye a', enter_imei: 'Antre IMEI 15 chif', enter_serial: 'Antre nimewo seri Apple',
-    email: 'Imèl', password: 'Modpas', name: 'Non konplè', forgot: 'Bliye modpas?',
+    email: 'ImÃ¨l', password: 'Modpas', name: 'Non konplÃ¨', forgot: 'Bliye modpas?',
     no_account: 'Ou pa gen kont?', have_account: 'Ou gen yon kont deja?',
-    search_history: 'Istwa Rechèch', orders: 'Kòmand', reports: 'Rapò', overview: 'Apèsi',
-    welcome_back: 'Byenveni ankò', signin_sub: 'Konekte pou aksede tablo ou',
-    create_account: 'Kreye kont ou', register_sub: 'Jwenn 3 kredi gratis lè ou enskri',
-    send_message: 'Voye Mesaj', contact_title: 'Kontakte nou', contact_sub: 'Nou reponn nan 24 èdtan.',
+    search_history: 'Istwa RechÃ¨ch', orders: 'KÃ²mand', reports: 'RapÃ²', overview: 'ApÃ¨si',
+    welcome_back: 'Byenveni ankÃ²', signin_sub: 'Konekte pou aksede tablo ou',
+    create_account: 'Kreye kont ou', register_sub: 'Jwenn 3 kredi gratis lÃ¨ ou enskri',
+    send_message: 'Voye Mesaj', contact_title: 'Kontakte nou', contact_sub: 'Nou reponn nan 24 Ã¨dtan.',
     language: 'Lang',
   },
 }
@@ -160,6 +160,18 @@ export default function App() {
     if (tk) { setToken(tk); refreshUser(tk).finally(() => setReady(true)) } else { setReady(true) }
   }, [refreshUser])
 
+  // Handle email verification links: /?verify=<token>
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const vtoken = params.get('verify')
+    if (vtoken) {
+      setRouteParam({ token: vtoken })
+      setRoute('verify-email')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
+
   const setAuth = (tk, u) => {
     setToken(tk); setUser(u); localStorage.setItem('ut_token', tk)
   }
@@ -175,7 +187,7 @@ export default function App() {
     return <div className="min-h-screen flex items-center justify-center bg-white"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
   }
 
-  const authPages = ['login', 'register', 'forgot']
+  const authPages = ['login', 'register', 'forgot', 'verify-email', 'check-email']
   const isAuthPage = authPages.includes(route)
 
   return (
@@ -190,6 +202,8 @@ export default function App() {
         {route === 'login' && <AuthPage {...ctx} mode="login" />}
         {route === 'register' && <AuthPage {...ctx} mode="register" />}
         {route === 'forgot' && <ForgotPassword {...ctx} />}
+        {route === 'verify-email' && <VerifyEmail {...ctx} />}
+        {route === 'check-email' && <CheckEmail {...ctx} />}
         {route === 'dashboard' && <Dashboard {...ctx} />}
         {route === 'profile' && <Profile {...ctx} />}
         {route === 'contact' && <Contact {...ctx} />}
@@ -238,8 +252,8 @@ function Navbar({ navigate, route, user, logout, lang, changeLang, t }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="en">English</SelectItem>
-              <SelectItem value="fr">Français</SelectItem>
-              <SelectItem value="ht">Kreyòl</SelectItem>
+              <SelectItem value="fr">FranÃ§ais</SelectItem>
+              <SelectItem value="ht">KreyÃ²l</SelectItem>
             </SelectContent>
           </Select>
 
@@ -324,7 +338,7 @@ const SLIDES = [
 
 const SERVICES = [
   { icon: ScanLine, title: 'IMEI Check', desc: 'Validate any 15-digit IMEI and reveal full device details.', route: 'imei' },
-  { icon: Cloud, title: 'iCloud Status', desc: 'Check Find My / Activation Lock — Clean or Locked.', route: 'imei' },
+  { icon: Cloud, title: 'iCloud Status', desc: 'Check Find My / Activation Lock â Clean or Locked.', route: 'imei' },
   { icon: MonitorSmartphone, title: 'MDM Status', desc: 'Detect remote device management / enrollment status.', route: 'imei' },
   { icon: BadgeCheck, title: 'Device Verification', desc: 'Confirm authenticity, blacklist and warranty coverage.', route: 'imei' },
   { icon: Unlock, title: 'Unlock Services', desc: 'Carrier & SIM-lock status and unlock eligibility.', route: 'pricing' },
@@ -332,10 +346,10 @@ const SERVICES = [
 ]
 
 const SUPPORTED_DEVICES = [
-  { icon: Smartphone, name: 'iPhone', note: 'iPhone 17 · 17 Pro · 17 Pro Max & more' },
-  { icon: Tablet, name: 'iPad', note: 'iPad Pro · iPad Air · iPad' },
-  { icon: Laptop, name: 'MacBook', note: 'MacBook Pro · MacBook Air' },
-  { icon: Monitor, name: 'Mac', note: 'iMac · Mac mini · Mac Studio' },
+  { icon: Smartphone, name: 'iPhone', note: 'iPhone 17 Â· 17 Pro Â· 17 Pro Max & more' },
+  { icon: Tablet, name: 'iPad', note: 'iPad Pro Â· iPad Air Â· iPad' },
+  { icon: Laptop, name: 'MacBook', note: 'MacBook Pro Â· MacBook Air' },
+  { icon: Monitor, name: 'Mac', note: 'iMac Â· Mac mini Â· Mac Studio' },
 ]
 
 // ------------------------------------------------------------------
@@ -493,7 +507,7 @@ function Home(props) {
               Verify any Apple device with <span className="bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">UnlockTap</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-slate-600">
-              Instant IMEI & serial lookups for iPhone, iPad and Mac — check iCloud lock, MDM status, blacklist, carrier and warranty from one premium dashboard.
+              Instant IMEI & serial lookups for iPhone, iPad and Mac â check iCloud lock, MDM status, blacklist, carrier and warranty from one premium dashboard.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button size="lg" className="rounded-full bg-blue-600 px-7 hover:bg-blue-700" onClick={() => navigate('imei')}>
@@ -579,7 +593,7 @@ function Home(props) {
             <Card key={i} className="rounded-2xl border-slate-100">
               <CardContent className="p-6">
                 <div className="mb-3 flex gap-0.5">{[...Array(5)].map((_, j) => <Star key={j} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)}</div>
-                <p className="text-slate-700">“{quote}”</p>
+                <p className="text-slate-700">â{quote}â</p>
                 <div className="mt-5 flex items-center gap-3">
                   <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-600 text-white">{name.slice(0, 1)}</AvatarFallback></Avatar>
                   <div><p className="text-sm font-semibold">{name}</p><p className="text-xs text-slate-500">{role}</p></div>
@@ -710,7 +724,7 @@ function Pricing(props) {
       <div className="mx-auto max-w-2xl text-center">
         <Badge className="mb-4 rounded-full border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50"><CreditCard className="mr-1 h-3.5 w-3.5" />Credits</Badge>
         <h1 className="text-4xl font-bold tracking-tight">{t('pricing_title')}</h1>
-        <p className="mt-3 text-slate-600">{t('pricing_sub')} A demo (mock) payment is used — no real card required.</p>
+        <p className="mt-3 text-slate-600">{t('pricing_sub')} A demo (mock) payment is used â no real card required.</p>
       </div>
       <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {plans.map(p => (
@@ -831,7 +845,7 @@ function Checker({ kind, navigate, token, user, setUser, t }) {
                   <div className="relative">
                     <div className="grid gap-x-8 gap-y-3 blur-sm select-none sm:grid-cols-2" aria-hidden>
                       {['Find My iPhone', 'iCloud Status', 'Blacklist Status', 'Warranty Status', 'Carrier', 'SIM-Lock Status'].map(k => (
-                        <div key={k} className="flex justify-between border-b border-slate-50 py-1.5 text-sm"><span className="text-slate-500">{k}</span><span className="font-medium">••••••</span></div>
+                        <div key={k} className="flex justify-between border-b border-slate-50 py-1.5 text-sm"><span className="text-slate-500">{k}</span><span className="font-medium">â¢â¢â¢â¢â¢â¢</span></div>
                       ))}
                     </div>
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
@@ -893,14 +907,26 @@ function AuthPage({ mode, navigate, setAuth, t }) {
     }
     setLoading(true)
     try {
-      const payload = isLogin
-        ? { email: form.email, password: form.password }
-        : { name: form.name, username: form.username, country: form.country, phone: form.phone, email: form.email, password: form.password, termsAccepted: agreed }
-      const res = await api(isLogin ? '/auth/login' : '/auth/register', { method: 'POST', body: payload })
-      setAuth(res.token, res.user)
-      toast.success(isLogin ? 'Welcome back!' : 'Account created! You got 3 free credits.')
-      navigate(res.user.role === 'admin' ? 'admin' : 'dashboard')
-    } catch (err) { toast.error(err.message) } finally { setLoading(false) }
+      if (isLogin) {
+        const res = await api('/auth/login', { method: 'POST', body: { email: form.email, password: form.password } })
+        setAuth(res.token, res.user)
+        toast.success('Welcome back!')
+        navigate(res.user.role === 'admin' ? 'admin' : 'dashboard')
+      } else {
+        const payload = { name: form.name, username: form.username, country: form.country, phone: form.phone, email: form.email, password: form.password, termsAccepted: agreed }
+        const res = await api('/auth/register', { method: 'POST', body: payload })
+        // No auto-login: account is created but stays logged out until the real
+        // verification email is confirmed.
+        toast.success(res.message || 'Account created! Please check your email to verify your account.')
+        navigate('check-email', { email: form.email })
+      }
+    } catch (err) {
+      if (err.data?.code === 'EMAIL_NOT_VERIFIED') {
+        navigate('verify-email', { email: form.email })
+      } else {
+        toast.error(err.message)
+      }
+    } finally { setLoading(false) }
   }
 
   const inputCls = 'mt-1 h-11 rounded-xl'
@@ -966,6 +992,112 @@ function AuthPage({ mode, navigate, setAuth, t }) {
           </Button>
         </form>
       )}
+    </AuthShell>
+  )
+}
+
+// ==================================================================
+// Email verification pages
+// ==================================================================
+function VerifyEmail({ navigate, routeParam }) {
+  const token = routeParam?.token || null
+  const [status, setStatus] = useState(token ? 'verifying' : 'needs-verification')
+  const [message, setMessage] = useState('')
+  const [email, setEmail] = useState(routeParam?.email || '')
+  const [resending, setResending] = useState(false)
+
+  useEffect(() => {
+    if (!token) return
+    (async () => {
+      try {
+        const res = await api('/auth/verify-email', { method: 'POST', body: { token } })
+        setStatus('success')
+        setMessage(res.message || 'Your email has been verified. You can now log in.')
+      } catch (err) {
+        setStatus('error')
+        setMessage(err.message || 'This verification link is invalid or has expired.')
+      }
+    })()
+  }, [token])
+
+  const resend = async () => {
+    if (!email) { toast.error('Enter your email address'); return }
+    setResending(true)
+    try {
+      const res = await api('/auth/resend-verification', { method: 'POST', body: { email } })
+      toast.success(res.message || 'Verification email sent.')
+    } catch (err) { toast.error(err.message) } finally { setResending(false) }
+  }
+
+  return (
+    <AuthShell title="Verify your email" sub="" onHome={() => navigate('home')}
+      footer={<button onClick={() => navigate('login')} className="underline">Back to Login</button>}>
+      {status === 'verifying' && (
+        <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <p className="text-sm text-slate-600">Verifying your emailâ¦</p>
+        </div>
+      )}
+      {status === 'success' && (
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+          <p className="text-sm text-slate-700">{message}</p>
+          <Button className="mt-2 h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" onClick={() => navigate('login')}>Go to Login</Button>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <XCircle className="h-10 w-10 text-red-500" />
+          <p className="text-sm text-slate-700">{message}</p>
+          <div className="mt-2 w-full space-y-2">
+            <Input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" />
+            <Button className="h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" onClick={resend} disabled={resending}>
+              {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Resend Verification Email'}
+            </Button>
+          </div>
+        </div>
+      )}
+      {status === 'needs-verification' && (
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <Mail className="h-10 w-10 text-blue-500" />
+          <p className="text-sm text-slate-700">Please verify your email address before logging in.</p>
+          <div className="mt-2 w-full space-y-2">
+            <Input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" />
+            <Button className="h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" onClick={resend} disabled={resending}>
+              {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Resend Verification Email'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </AuthShell>
+  )
+}
+
+function CheckEmail({ navigate, routeParam }) {
+  const [email, setEmail] = useState(routeParam?.email || '')
+  const [resending, setResending] = useState(false)
+  const resend = async () => {
+    if (!email) { toast.error('Enter your email address'); return }
+    setResending(true)
+    try {
+      const res = await api('/auth/resend-verification', { method: 'POST', body: { email } })
+      toast.success(res.message || 'Verification email sent.')
+    } catch (err) { toast.error(err.message) } finally { setResending(false) }
+  }
+  return (
+    <AuthShell title="Check your email" sub="" onHome={() => navigate('home')}
+      footer={<button onClick={() => navigate('login')} className="underline">Back to Login</button>}>
+      <div className="flex flex-col items-center gap-3 py-4 text-center">
+        <Mail className="h-10 w-10 text-blue-500" />
+        <p className="text-sm text-slate-700">
+          We've sent a verification link to <span className="font-medium">{email}</span>. Click the link in the email, then log in.
+        </p>
+        <div className="mt-2 w-full">
+          <Button variant="outline" className="h-11 w-full rounded-xl" onClick={resend} disabled={resending}>
+            {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Resend Verification Email'}
+          </Button>
+        </div>
+      </div>
     </AuthShell>
   )
 }
@@ -1165,9 +1297,9 @@ function Profile(props) {
             </div>
             <Separator />
             <div className="grid gap-4 sm:grid-cols-3">
-              <div><Label className="text-xs text-slate-500">Username</Label><p className="mt-1 text-sm font-medium">{user?.username || '—'}</p></div>
-              <div><Label className="text-xs text-slate-500">Country</Label><p className="mt-1 text-sm font-medium">{user?.country || '—'}</p></div>
-              <div><Label className="text-xs text-slate-500">Phone</Label><p className="mt-1 text-sm font-medium">{user?.phone || '—'}</p></div>
+              <div><Label className="text-xs text-slate-500">Username</Label><p className="mt-1 text-sm font-medium">{user?.username || 'â'}</p></div>
+              <div><Label className="text-xs text-slate-500">Country</Label><p className="mt-1 text-sm font-medium">{user?.country || 'â'}</p></div>
+              <div><Label className="text-xs text-slate-500">Phone</Label><p className="mt-1 text-sm font-medium">{user?.phone || 'â'}</p></div>
             </div>
             <Separator />
             <div><Label>{t('name')}</Label><Input className="mt-1 h-11 rounded-xl" value={name} onChange={e => setName(e.target.value)} /></div>
@@ -1175,7 +1307,7 @@ function Profile(props) {
             <div><Label>{t('language')}</Label>
               <Select value={lang} onValueChange={changeLang}>
                 <SelectTrigger className="mt-1 h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">Français</SelectItem><SelectItem value="ht">Kreyòl Ayisyen</SelectItem></SelectContent>
+                <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="fr">FranÃ§ais</SelectItem><SelectItem value="ht">KreyÃ²l Ayisyen</SelectItem></SelectContent>
               </Select>
             </div>
             <div><Label>New {t('password')} (optional)</Label><Input type="password" className="mt-1 h-11 rounded-xl" value={password} onChange={e => setPassword(e.target.value)} placeholder="Leave blank to keep current" /></div>
@@ -1401,7 +1533,7 @@ function AdminDashboard(props) {
             <div className="space-y-3">
               {contacts.map(c => (
                 <div key={c.id} className="rounded-xl border border-slate-100 p-4">
-                  <div className="flex items-center justify-between"><p className="font-medium">{c.name} <span className="text-sm font-normal text-slate-500">· {c.email}</span></p><span className="text-xs text-slate-400">{new Date(c.createdAt).toLocaleString()}</span></div>
+                  <div className="flex items-center justify-between"><p className="font-medium">{c.name} <span className="text-sm font-normal text-slate-500">Â· {c.email}</span></p><span className="text-xs text-slate-400">{new Date(c.createdAt).toLocaleString()}</span></div>
                   <p className="mt-1 text-sm text-slate-600">{c.message}</p>
                 </div>
               ))}
@@ -1446,10 +1578,11 @@ function Footer({ navigate, t }) {
         </div>
         <Separator className="my-8" />
         <div className="flex flex-col items-center justify-between gap-3 text-sm text-slate-400 sm:flex-row">
-          <p>© {new Date().getFullYear()} UnlockTap. All rights reserved.</p>
-          <p>Made for Apple device verification · Demo build</p>
+          <p>Â© {new Date().getFullYear()} UnlockTap. All rights reserved.</p>
+          <p>Made for Apple device verification Â· Demo build</p>
         </div>
       </div>
     </footer>
   )
 }
+

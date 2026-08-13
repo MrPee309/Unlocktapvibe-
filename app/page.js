@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -774,7 +773,22 @@ function Checker({ kind, navigate, token, user, setUser, t }) {
         method: 'POST', token, body: isImei ? { imei: clean } : { serial: clean },
       })
       setResult(res)
-    } catch (e) { toast.error(e.message) } finally { setLoading(false) }
+      if (res.locked === false) {
+        // Device's 2 free checks are used up - this check was billed directly and comes back unlocked
+        setPremium(res.premium)
+        if (user) setUser({ ...user, credits: res.credits })
+      }
+    } catch (e) {
+      if (e.data?.code === 'FREE_LIMIT_REACHED') {
+        toast.error('Your 2 free checks on this device are used up. Please create an account to continue.')
+        navigate('register')
+      } else if (e.data?.code === 'NO_CREDITS') {
+        toast.error('Not enough credits')
+        navigate('pricing')
+      } else {
+        toast.error(e.message)
+      }
+    } finally { setLoading(false) }
   }
 
   const unlock = async () => {
@@ -818,6 +832,13 @@ function Checker({ kind, navigate, token, user, setUser, t }) {
 
         {result && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-8 space-y-6">
+            {typeof result.freeChecksRemaining === 'number' && (
+              <p className="text-center text-xs text-slate-500">
+                {result.freeChecksRemaining > 0
+                  ? `${result.freeChecksRemaining} free check${result.freeChecksRemaining === 1 ? '' : 's'} left on this device.`
+                  : 'This was your last free check on this device â the next one requires an account and credits.'}
+              </p>
+            )}
             {/* Free preview */}
             <Card className="rounded-2xl border-slate-100">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">

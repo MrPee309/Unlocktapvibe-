@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -37,6 +38,21 @@ const COUNTRIES_LIST = [
   'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'South Africa', 'Nigeria', 'Kenya',
   'Egypt', 'Morocco', 'Turkey', 'Israel', 'Other',
 ]
+
+// Calling code shown/auto-filled in the phone field once a country is selected
+const COUNTRY_DIAL_CODES = {
+  'United States': '+1', 'United Kingdom': '+44', 'Canada': '+1', 'France': '+33',
+  'Germany': '+49', 'Spain': '+34', 'Italy': '+39', 'Netherlands': '+31', 'Belgium': '+32',
+  'Switzerland': '+41', 'Portugal': '+351', 'Ireland': '+353', 'Sweden': '+46', 'Norway': '+47',
+  'Denmark': '+45', 'Finland': '+358', 'Poland': '+48', 'Austria': '+43', 'Greece': '+30',
+  'Haiti': '+509', 'Dominican Republic': '+1', 'Mexico': '+52', 'Brazil': '+55',
+  'Argentina': '+54', 'Chile': '+56', 'Colombia': '+57', 'Peru': '+51', 'Jamaica': '+1',
+  'Trinidad and Tobago': '+1', 'Australia': '+61', 'New Zealand': '+64', 'Japan': '+81',
+  'China': '+86', 'South Korea': '+82', 'India': '+91', 'Singapore': '+65',
+  'United Arab Emirates': '+971', 'Saudi Arabia': '+966', 'Qatar': '+974', 'South Africa': '+27',
+  'Nigeria': '+234', 'Kenya': '+254', 'Egypt': '+20', 'Morocco': '+212', 'Turkey': '+90',
+  'Israel': '+972', 'Other': '',
+}
 
 // ------------------------------------------------------------------
 // i18n
@@ -891,12 +907,87 @@ function AuthShell({ title, sub, children, footer, wide, onHome }) {
   )
 }
 
+// Renders Google's official "Sign in with Google" button and forwards the
+// resulting ID token to our backend. Renders nothing if Google isn't configured
+// (NEXT_PUBLIC_GOOGLE_CLIENT_ID unset), so the rest of the auth page is unaffected.
+function GoogleSignInButton({ setAuth, navigate }) {
+  const btnRef = useRef(null)
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+
+  useEffect(() => {
+    if (!clientId || typeof window === 'undefined') return
+
+    const initialize = () => {
+      if (!window.google?.accounts?.id || !btnRef.current) return
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: async (response) => {
+          try {
+            const res = await api('/auth/google', { method: 'POST', body: { credential: response.credential } })
+            setAuth(res.token, res.user)
+            toast.success('Welcome!')
+            navigate(res.user.role === 'admin' ? 'admin' : 'dashboard')
+          } catch (err) {
+            toast.error(err.message || 'Google sign-in failed')
+          }
+        },
+      })
+      window.google.accounts.id.renderButton(btnRef.current, { theme: 'outline', size: 'large', width: 320 })
+    }
+
+    if (window.google?.accounts?.id) {
+      initialize()
+    } else {
+      const existing = document.getElementById('google-identity-script')
+      if (existing) {
+        existing.addEventListener('load', initialize)
+      } else {
+        const script = document.createElement('script')
+        script.id = 'google-identity-script'
+        script.src = 'https://accounts.google.com/gsi/client'
+        script.async = true
+        script.defer = true
+        script.onload = initialize
+        document.body.appendChild(script)
+      }
+    }
+  }, [clientId, setAuth, navigate])
+
+  if (!clientId) return null
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 bg-slate-200" />
+        <span className="text-xs text-slate-400">or</span>
+        <div className="h-px flex-1 bg-slate-200" />
+      </div>
+      <div className="flex justify-center" ref={btnRef} />
+    </div>
+  )
+}
+
 function AuthPage({ mode, navigate, setAuth, t }) {
   const isLogin = mode === 'login'
   const [form, setForm] = useState({ name: '', username: '', country: '', phone: '', email: '', password: '', confirmPassword: '' })
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [lastAutoPhone, setLastAutoPhone] = useState('')
   const upd = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+
+  // Prefill the phone field with the country's calling code. Only overwrites the
+  // phone field if it's empty or still holds the previous auto-filled code untouched,
+  // so it never clobbers a number the user has already started typing.
+  const onCountryChange = (v) => {
+    const code = COUNTRY_DIAL_CODES[v] || ''
+    const nextAuto = code ? `${code} ` : ''
+    setForm((f) => ({
+      ...f,
+      country: v,
+      phone: (f.phone === '' || f.phone === lastAutoPhone) ? nextAuto : f.phone,
+    }))
+    setLastAutoPhone(nextAuto)
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -922,7 +1013,7 @@ function AuthPage({ mode, navigate, setAuth, t }) {
       }
     } catch (err) {
       if (err.data?.code === 'EMAIL_NOT_VERIFIED') {
-        navigate('verify-email', { email: form.email })
+        navigate('verify-email', { email: err.data?.email || form.email })
       } else {
         toast.error(err.message)
       }
@@ -945,7 +1036,7 @@ function AuthPage({ mode, navigate, setAuth, t }) {
     >
       {isLogin ? (
         <form onSubmit={submit} className="space-y-4">
-          <div><Label>Email Address</Label><Input type="email" className={inputCls} value={form.email} onChange={upd('email')} required /></div>
+          <div><Label>Email or Username</Label><Input type="text" className={inputCls} value={form.email} onChange={upd('email')} autoCapitalize="none" required /></div>
           <div><Label>Password</Label><Input type="password" className={inputCls} value={form.password} onChange={upd('password')} required /></div>
           <div className="text-right"><button type="button" onClick={() => navigate('forgot')} className="text-sm text-blue-600 hover:underline">{t('forgot')}</button></div>
           <Button type="submit" className="h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700" disabled={loading}>
@@ -962,7 +1053,7 @@ function AuthPage({ mode, navigate, setAuth, t }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label>Country</Label>
-              <Select value={form.country} onValueChange={(v) => setForm({ ...form, country: v })}>
+              <Select value={form.country} onValueChange={onCountryChange}>
                 <SelectTrigger className={inputCls}><SelectValue placeholder="Select country" /></SelectTrigger>
                 <SelectContent className="max-h-64">
                   {COUNTRIES_LIST.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -992,6 +1083,9 @@ function AuthPage({ mode, navigate, setAuth, t }) {
           </Button>
         </form>
       )}
+      <div className="mt-4">
+        <GoogleSignInButton setAuth={setAuth} navigate={navigate} />
+      </div>
     </AuthShell>
   )
 }
@@ -1585,4 +1679,3 @@ function Footer({ navigate, t }) {
     </footer>
   )
 }
-

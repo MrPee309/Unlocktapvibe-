@@ -1,4 +1,3 @@
-
 import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
@@ -299,6 +298,30 @@ async function sendVerificationEmail({ to, name, token, request }) {
   } catch (err) {
     throw new Error(sanitizeMailError(err))
   }
+}
+
+// ------------------------------------------------------------------
+// Google Sign-In - verifies the ID token Google issues client-side.
+// Uses Google's own tokeninfo endpoint, so no extra SDK/dependency is needed.
+// ------------------------------------------------------------------
+async function verifyGoogleIdToken(idToken) {
+  if (!idToken || typeof idToken !== 'string') return null
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+  if (!clientId) throw new Error('Google Sign-In is not configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID in the environment variables.')
+  const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`)
+  if (!res.ok) return null
+  const payload = await res.json()
+  // The token must have been issued for OUR app, and Google must have verified the email itself
+  if (payload.aud !== clientId) return null
+  if (payload.email_verified !== 'true' && payload.email_verified !== true) return null
+  if (!payload.email) return null
+  return payload
+}
+
+function usernameFromEmail(email) {
+  const base = (email.split('@')[0] || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 16) || 'user'
+  const suffix = crypto.randomBytes(3).toString('hex')
+  return `${base}_${suffix}`.slice(0, 20)
 }
 
 // ------------------------------------------------------------------
@@ -676,14 +699,22 @@ async function handleRoute(request, { params }) {
 
     if (route === '/auth/login' && method === 'POST') {
       const { email, password } = await request.json()
-      if (!email || !password) return json({ error: 'Email and password are required' }, 400)
-      const user = await db.collection('users').findOne({ email: (email || '').toLowerCase() })
-      if (!user || !verifyPassword(password, user.password)) return json({ error: 'Invalid email or password' }, 401)
+      const identifier = (email || '').trim()
+      if (!identifier || !password) return json({ error: 'Email/username and password are required' }, 400)
+      // Accept either an email address or a username in the same field
+      const escapedId = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const user = await db.collection('users').findOne({
+        $or: [
+          { email: identifier.toLowerCase() },
+          { username: { $regex: `^${escapedId}$`, $options: 'i' } },
+        ],
+      })
+      if (!user || !verifyPassword(password, user.password)) return json({ error: 'Invalid email/username or password' }, 401)
       if (user.banned) return json({ error: 'This account has been suspended' }, 403)
       // Only block accounts explicitly marked unverified - accounts created before this
       // feature existed have no `emailVerified` field and continue to log in normally.
       if (user.emailVerified === false) {
-        return json({ error: 'Please verify your email before logging in.', code: 'EMAIL_NOT_VERIFIED' }, 403)
+        return json({ error: 'Please verify your email before logging in.', code: 'EMAIL_NOT_VERIFIED', email: user.email }, 403)
       }
       const token = signToken({ sub: user.id, role: user.role })
       return json({ token, user: cleanUser(user) })
@@ -737,6 +768,59 @@ async function handleRoute(request, { params }) {
       }
       await db.collection('users').updateOne({ id: user.id }, { $set: { verificationLastSentAt: new Date() } })
       return json({ message: 'Verification email sent. Please check your inbox.' })
+    }
+
+    if (route === '/auth/google' && method === 'POST') {
+      const { credential } = await request.json()
+      let payload
+      try {
+        payload = await verifyGoogleIdToken(credential)
+      } catch (err) {
+        console.error('Google sign-in configuration error:', err.message)
+        return json({ error: 'Google Sign-In is not configured on this server.' }, 502)
+      }
+      if (!payload) return json({ error: 'Invalid or expired Google credential' }, 401)
+
+      const email = payload.email.toLowerCase()
+      let user = await db.collection('users').findOne({ email })
+
+      if (!user) {
+        let username = usernameFromEmail(email)
+        while (await db.collection('users').findOne({ username: { $regex: `^${username}$`, $options: 'i' } })) {
+          username = usernameFromEmail(email)
+        }
+        user = {
+          id: uuidv4(),
+          name: payload.name || email.split('@')[0],
+          username,
+          country: null,
+          phone: null,
+          email,
+          password: null, // no password - this account authenticates via Google only
+          role: 'user',
+          credits: 3, // free welcome credits, same as normal registration
+          language: 'en',
+          banned: false,
+          termsAccepted: true,
+          termsAcceptedAt: new Date(),
+          emailVerified: true, // Google already verified this email address
+          googleId: payload.sub,
+          createdAt: new Date(),
+        }
+        await db.collection('users').insertOne(user)
+      } else {
+        if (user.banned) return json({ error: 'This account has been suspended' }, 403)
+        const updates = {}
+        if (user.emailVerified === false) updates.emailVerified = true
+        if (!user.googleId) updates.googleId = payload.sub
+        if (Object.keys(updates).length) {
+          await db.collection('users').updateOne({ id: user.id }, { $set: updates })
+          user = { ...user, ...updates }
+        }
+      }
+
+      const token = signToken({ sub: user.id, role: user.role })
+      return json({ token, user: cleanUser(user) })
     }
 
     if (route === '/auth/forgot-password' && method === 'POST') {
@@ -1016,3 +1100,4 @@ export const POST = handleRoute
 export const PUT = handleRoute
 export const DELETE = handleRoute
 export const PATCH = handleRoute
+

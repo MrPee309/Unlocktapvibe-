@@ -325,6 +325,197 @@ function usernameFromEmail(email) {
 }
 
 // ------------------------------------------------------------------
+// Free-check limit for anonymous visitors (2 free checks per device, then
+// login + credits are required). Tracked by a cookie AND the client IP
+// together, so clearing cookies alone (same network) or changing network
+// alone (same browser) doesn't reset the count.
+// ------------------------------------------------------------------
+const FREE_CHECKS_PER_DEVICE = 2
+const DEVICE_COOKIE = 'ut_device'
+
+function getClientIp(request) {
+  const fwd = request.headers.get('x-forwarded-for')
+  if (fwd) return fwd.split(',')[0].trim()
+  return request.headers.get('x-real-ip') || 'unknown'
+}
+
+function getOrCreateDeviceId(request) {
+  const existing = request.cookies.get(DEVICE_COOKIE)?.value
+  if (existing) return { deviceId: existing, isNew: false }
+  return { deviceId: crypto.randomBytes(16).toString('hex'), isNew: true }
+}
+
+// Returns the current free-check usage for this device/IP pair, creating a
+// tracking record on first sight. Does NOT increment - call recordFreeCheck after.
+async function getDeviceCheckUsage(db, deviceId, ip) {
+  let doc = await db.collection('devicechecks').findOne({ $or: [{ deviceIds: deviceId }, { ips: ip }] })
+  if (!doc) {
+    doc = { id: uuidv4(), deviceIds: [deviceId], ips: [ip], freeChecksUsed: 0, createdAt: new Date() }
+    await db.collection('devicechecks').insertOne(doc)
+  } else {
+    const update = {}
+    if (!doc.deviceIds.includes(deviceId)) update.$addToSet = { ...(update.$addToSet || {}), deviceIds: deviceId }
+    if (!doc.ips.includes(ip)) update.$addToSet = { ...(update.$addToSet || {}), ips: ip }
+    if (Object.keys(update).length) await db.collection('devicechecks').updateOne({ id: doc.id }, update)
+  }
+  return doc
+}
+async function recordFreeCheck(db, docId) {
+  await db.collection('devicechecks').updateOne({ id: docId }, { $inc: { freeChecksUsed: 1 } })
+}
+
+// ------------------------------------------------------------------
+// Real IMEI/Serial verification via Sickw.com (falls back to the mock engine
+// below if IMEI_PROVIDER_API_KEY is not set, so nothing changes until configured).
+// ------------------------------------------------------------------
+async function callSickwApi(query, serviceId) {
+  const apiKey = process.env.IMEI_PROVIDER_API_KEY
+  if (!apiKey) return null // not configured - caller falls back to the mock engine
+  const apiUrl = process.env.IMEI_PROVIDER_URL || 'https://sickw.com/api.php'
+  const service = serviceId || process.env.IMEI_PROVIDER_SERVICE_ID || '61' // 61 = iPhone Carrier & FMI & Blacklist
+  const params = new URLSearchParams({ format: 'json', key: apiKey, imei: query, service })
+  let res
+  try {
+    res = await fetch(`${apiUrl}?${params.toString()}`)
+  } catch (err) {
+    throw new Error('Could not reach the IMEI verification service.')
+  }
+  if (!res.ok) throw new Error(`IMEI verification service returned HTTP ${res.status}`)
+  const data = await res.json().catch(() => null)
+  if (!data) throw new Error('IMEI verification service returned an unexpected response.')
+  if (data.status && String(data.status).toLowerCase() !== 'success') {
+    throw new Error((typeof data.result === 'string' && data.result) || 'IMEI verification failed for this device.')
+  }
+  const raw = typeof data.result === 'string' ? data.result : JSON.stringify(data.result ?? data)
+  // Response is a block of "Label: Value" lines - parse it into a plain object
+  const fields = {}
+  raw.split(/\r?\n/).forEach((line) => {
+    const idx = line.indexOf(':')
+    if (idx === -1) return
+    const key = line.slice(0, idx).trim()
+    const value = line.slice(idx + 1).trim()
+    if (key && value) fields[key] = value
+  })
+  return fields
+}
+
+// Maps Sickw's raw "Label: Value" fields onto our {free, premium} report shape.
+// Any field Sickw returns that we don't explicitly recognize is still included
+// under its original label, so no data from a paid lookup is silently dropped.
+function mapSickwFields(query, fields) {
+  const get = (...keys) => keys.map((k) => fields[k]).find((v) => v)
+  const modelDesc = get('Description', 'Product Description', 'Config Description') || 'Unknown Model'
+  const fmiRaw = get('iCloud Lock', 'FMI Status', 'Find My iPhone')
+  const fmi = /^on$/i.test(fmiRaw || '') ? 'ON' : /^off$/i.test(fmiRaw || '') ? 'OFF' : (fmiRaw || 'Unknown')
+
+  const free = { 'Brand': 'Apple', 'Model': modelDesc }
+  const capMatch = modelDesc.match(/(\d+)\s?GB|(\d+)\s?TB/i)
+  if (capMatch) free['Capacity'] = capMatch[0].toUpperCase().replace(/\s/g, '')
+
+  const premium = {
+    'IMEI': get('IMEI') || query,
+    'Find My iPhone': fmi,
+    'iCloud Status': get('iCloud Status') || (fmi === 'ON' ? 'Locked (Activation Lock ON)' : fmi === 'OFF' ? 'Clean' : 'Unknown'),
+  }
+  if (get('IMEI2')) premium['IMEI2'] = get('IMEI2')
+  if (get('SERIAL', 'Serial', 'SN')) premium['Serial Number'] = get('SERIAL', 'Serial', 'SN')
+  if (get('MDM Lock')) premium['MDM Lock'] = get('MDM Lock')
+  if (get('Blacklist Status', 'Blacklist')) premium['Blacklist Status'] = get('Blacklist Status', 'Blacklist')
+  if (get('Warranty Status Description', 'Warranty Status')) premium['Warranty Status'] = get('Warranty Status Description', 'Warranty Status')
+  if (get('Sold To Name')) premium['Carrier'] = get('Sold To Name')
+  if (get('Purchase Country Desc', 'Purchase Country Code')) premium['Country'] = get('Purchase Country Desc', 'Purchase Country Code')
+  if (get('Purchase Date')) premium['Estimated Purchase Date'] = get('Purchase Date')
+  if (get('Replaced Device')) premium['Replaced Device'] = get('Replaced Device')
+
+  // Append any remaining raw fields we haven't already mapped above, under Sickw's own label
+  const alreadyUsed = new Set(['Description', 'Product Description', 'Config Description', 'IMEI', 'IMEI2',
+    'SERIAL', 'Serial', 'SN', 'iCloud Lock', 'FMI Status', 'Find My iPhone', 'iCloud Status', 'MDM Lock',
+    'Blacklist Status', 'Blacklist', 'Warranty Status Description', 'Warranty Status', 'Sold To Name',
+    'Purchase Country Desc', 'Purchase Country Code', 'Purchase Date', 'Replaced Device'])
+  for (const [k, v] of Object.entries(fields)) {
+    if (!alreadyUsed.has(k)) premium[k] = v
+  }
+  return { free, premium }
+}
+
+// Real report if configured, otherwise the deterministic mock engine (unchanged behavior)
+async function getImeiReport(imei) {
+  if (process.env.IMEI_PROVIDER_API_KEY) {
+    const fields = await callSickwApi(imei)
+    return mapSickwFields(imei, fields)
+  }
+  return generateIMEIReport(imei)
+}
+async function getSerialReport(serial) {
+  if (process.env.IMEI_PROVIDER_API_KEY) {
+    const fields = await callSickwApi(serial)
+    return mapSickwFields(serial, fields)
+  }
+  return generateSerialReport(serial)
+}
+
+// Shared logic for /imei/check and /serial/check: runs the (paid) lookup once,
+// enforces the 2-free-checks-per-device limit, and - once that limit is used up -
+// requires login + 1 credit, charging it immediately and returning the full
+// unlocked report right away (no separate /unlock call needed for that case).
+async function handleCheckRequest({ request, db, type, cleanQuery, reportFn }) {
+  const { deviceId, isNew } = getOrCreateDeviceId(request)
+  const ip = getClientIp(request)
+  const usage = await getDeviceCheckUsage(db, deviceId, ip)
+  const user = await getUser(request, db)
+  const overLimit = usage.freeChecksUsed >= FREE_CHECKS_PER_DEVICE
+
+  let report
+  try {
+    report = await reportFn(cleanQuery)
+  } catch (err) {
+    console.error(`${type} provider error:`, err.message)
+    return { response: json({ error: 'The verification service is temporarily unavailable. Please try again shortly.' }, 502), deviceId, isNew }
+  }
+
+  if (overLimit) {
+    if (!user) {
+      return {
+        response: json({ error: 'You have used your 2 free checks on this device. Please create an account and add credits to continue.', code: 'FREE_LIMIT_REACHED' }, 403),
+        deviceId, isNew,
+      }
+    }
+    if (user.credits < 1) {
+      return { response: json({ error: 'Insufficient credits. Please buy a credit pack.', code: 'NO_CREDITS' }, 402), deviceId, isNew }
+    }
+    await db.collection('users').updateOne({ id: user.id }, { $inc: { credits: -1 } })
+    const search = {
+      id: uuidv4(), userId: user.id, type, query: cleanQuery, model: report.free['Model'],
+      unlocked: true, cachedFree: report.free, cachedPremium: report.premium, createdAt: new Date(),
+    }
+    await db.collection('searchhistory').insertOne(search)
+    await db.collection('reports').insertOne({
+      id: uuidv4(), userId: user.id, searchId: search.id, type, query: cleanQuery, model: search.model,
+      data: { ...report.free, ...report.premium }, createdAt: new Date(),
+    })
+    const updatedUser = await db.collection('users').findOne({ id: user.id })
+    return {
+      response: json({ searchId: search.id, type, query: cleanQuery, free: report.free, premium: report.premium, locked: false, credits: updatedUser.credits }),
+      deviceId, isNew,
+    }
+  }
+
+  const search = {
+    id: uuidv4(), userId: user ? user.id : null, type, query: cleanQuery, model: report.free['Model'],
+    unlocked: false, cachedFree: report.free, cachedPremium: report.premium, createdAt: new Date(),
+  }
+  await db.collection('searchhistory').insertOne(search)
+  await recordFreeCheck(db, usage.id)
+  return {
+    response: json({
+      searchId: search.id, type, query: cleanQuery, free: report.free, locked: true,
+      freeChecksRemaining: Math.max(0, FREE_CHECKS_PER_DEVICE - usage.freeChecksUsed - 1),
+    }),
+    deviceId, isNew,
+  }
+}
+
+// ------------------------------------------------------------------
 // Seeded RNG for deterministic mock reports
 // ------------------------------------------------------------------
 function seededRng(str) {
@@ -875,38 +1066,18 @@ async function handleRoute(request, { params }) {
       const { imei } = await request.json()
       const clean = (imei || '').replace(/\s|-/g, '')
       if (!/^\d{15}$/.test(clean)) return json({ error: 'IMEI must be exactly 15 digits' }, 400)
-      const report = generateIMEIReport(clean)
-      const user = await getUser(request, db)
-      const search = {
-        id: uuidv4(),
-        userId: user ? user.id : null,
-        type: 'imei',
-        query: clean,
-        model: report.free['Model'],
-        unlocked: false,
-        createdAt: new Date(),
-      }
-      await db.collection('searchhistory').insertOne(search)
-      return json({ searchId: search.id, type: 'imei', query: clean, free: report.free, locked: true })
+      const { response, deviceId, isNew } = await handleCheckRequest({ request, db, type: 'imei', cleanQuery: clean, reportFn: getImeiReport })
+      if (isNew) response.cookies.set(DEVICE_COOKIE, deviceId, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365 })
+      return response
     }
 
     if (route === '/serial/check' && method === 'POST') {
       const { serial } = await request.json()
       const clean = (serial || '').trim().toUpperCase()
       if (!/^[A-Z0-9]{8,14}$/.test(clean)) return json({ error: 'Invalid Apple serial number (8-14 alphanumeric characters)' }, 400)
-      const report = generateSerialReport(clean)
-      const user = await getUser(request, db)
-      const search = {
-        id: uuidv4(),
-        userId: user ? user.id : null,
-        type: 'serial',
-        query: clean,
-        model: report.free['Model'],
-        unlocked: false,
-        createdAt: new Date(),
-      }
-      await db.collection('searchhistory').insertOne(search)
-      return json({ searchId: search.id, type: 'serial', query: clean, free: report.free, locked: true })
+      const { response, deviceId, isNew } = await handleCheckRequest({ request, db, type: 'serial', cleanQuery: clean, reportFn: getSerialReport })
+      if (isNew) response.cookies.set(DEVICE_COOKIE, deviceId, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365 })
+      return response
     }
 
     // Unlock premium report (spends 1 credit)
@@ -916,8 +1087,19 @@ async function handleRoute(request, { params }) {
       const { searchId } = await request.json()
       const search = await db.collection('searchhistory').findOne({ id: searchId })
       if (!search) return json({ error: 'Search not found' }, 404)
-      // Re-generate premium data deterministically
-      const report = search.type === 'imei' ? generateIMEIReport(search.query) : generateSerialReport(search.query)
+      // Reuse the report captured at check-time (never re-query the paid provider twice
+      // for the same search). Only older searches from before this existed need a re-fetch.
+      let report
+      if (search.cachedFree && search.cachedPremium) {
+        report = { free: search.cachedFree, premium: search.cachedPremium }
+      } else {
+        try {
+          report = search.type === 'imei' ? await getImeiReport(search.query) : await getSerialReport(search.query)
+        } catch (err) {
+          console.error('Provider error on unlock:', err.message)
+          return json({ error: 'The verification service is temporarily unavailable. Please try again shortly.' }, 502)
+        }
+      }
 
       if (!search.unlocked) {
         if (user.credits < 1) return json({ error: 'Insufficient credits. Please buy a credit pack.', code: 'NO_CREDITS' }, 402)
@@ -944,7 +1126,9 @@ async function handleRoute(request, { params }) {
       const user = await getUser(request, db)
       if (!user) return json({ error: 'Unauthorized' }, 401)
       const items = await db.collection('searchhistory').find({ userId: user.id }).sort({ createdAt: -1 }).limit(200).toArray()
-      return json({ items: items.map(({ _id, ...r }) => r) })
+      // cachedFree/cachedPremium are the provider's paid lookup data - never expose
+      // them here for unlocked=false items, or the premium paywall would be bypassed.
+      return json({ items: items.map(({ _id, cachedFree, cachedPremium, ...r }) => r) })
     }
 
     if (route === '/reports' && method === 'GET') {
@@ -972,7 +1156,8 @@ async function handleRoute(request, { params }) {
       const recent = await db.collection('searchhistory').find({ userId: user.id }).sort({ createdAt: -1 }).limit(5).toArray()
       return json({
         stats: { credits: user.credits, searches, reports, orders },
-        recent: recent.map(({ _id, ...r }) => r),
+        // Same paywall rule as /history: never leak the provider's cached premium data here
+        recent: recent.map(({ _id, cachedFree, cachedPremium, ...r }) => r),
       })
     }
 
@@ -1055,7 +1240,7 @@ async function handleRoute(request, { params }) {
       }
       if (route === '/admin/searches' && method === 'GET') {
         const items = await db.collection('searchhistory').find({}).sort({ createdAt: -1 }).limit(500).toArray()
-        return json({ items: items.map(({ _id, ...r }) => r) })
+        return json({ items: items.map(({ _id, cachedFree, cachedPremium, ...r }) => r) })
       }
       if (route === '/admin/reports' && method === 'GET') {
         const items = await db.collection('reports').find({}).sort({ createdAt: -1 }).limit(500).toArray()
@@ -1100,4 +1285,5 @@ export const POST = handleRoute
 export const PUT = handleRoute
 export const DELETE = handleRoute
 export const PATCH = handleRoute
+
 
